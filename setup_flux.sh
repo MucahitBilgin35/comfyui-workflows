@@ -1,13 +1,10 @@
 #!/bin/bash
 set -e
 
-# Hugging Face Token (Flux Dev için)
-# Eğer çalıştırma sırasında HF_TOKEN tanımlanmamışsa buradaki değeri kullanır
-HF_TOKEN="${HF_TOKEN:-hf_SENIN_TOKENIN}"
 COMFY_DIR="/workspace/ComfyUI"
 
 echo "======================================================"
-echo "   COMFYUI + FLUX DEV TEK HAMLEDE KURULUM BAŞLADI     "
+echo "   COMFYUI + FLUX DEV TOKENSIZ OTOMATİK KURULUM       "
 echo "======================================================"
 
 mkdir -p /workspace
@@ -39,25 +36,32 @@ for req in */requirements.txt; do
     pip install -q --break-system-packages -r "$req" 2>/dev/null || pip install -q -r "$req" 2>/dev/null || true
 done
 
-# 3. Modeller (aria2c 16x)
-echo "[3/4] Modeller 16 kanallı yüksek hızla indiriliyor..."
+# 3. Modeller (Tamamen Public Linkler - Sıfır Token!)
+echo "[3/4] Modeller yüksek hızla indiriliyor..."
 cd "$COMFY_DIR"
 mkdir -p models/{checkpoints,clip,vae,loras,controlnet,upscale_models}
 
+# CLIP & Text Encoders (Public)
 aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors" -d models/clip -o t5xxl_fp8_e4m3fn.safetensors
 aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" -d models/clip -o clip_l.safetensors
-aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors" -d models/vae -o ae.safetensors
+
+# VAE (Public Mirror - Token İstemez)
+aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/fffiloni/flux-dev-vae-mirror/resolve/main/ae.safetensors" -d models/vae -o ae.safetensors
+
+# Upscale & ControlNet (Public)
 aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth" -d models/upscale_models -o 4x-UltraSharp.pth
 aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union/resolve/main/diffusion_pytorch_model.safetensors" -d models/controlnet -o flux-dev-controlnet-union.safetensors
-aria2c -c -x 16 -s 16 -k 1M --header="Authorization: Bearer $HF_TOKEN" "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors" -d models/checkpoints -o flux1-dev-fp8.safetensors
 
-# 4. Başlat
+# FLUX.1 Dev FP8 Checkpoint (Public Mirror - Token İstemez)
+aria2c -c -x 16 -s 16 -k 1M "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors" -d models/checkpoints -o flux1-dev-fp8.safetensors
+
+# 4. ComfyUI'yi Başlat
 echo "[4/4] ComfyUI Başlatılıyor..."
 tmux kill-session -t comfyui 2>/dev/null || true
 tmux new-session -d -s comfyui "cd $COMFY_DIR && python main.py --listen 0.0.0.0 --port 8188 --fast"
 
 echo "======================================================"
-echo "   ✅ KURULUM TAMAMLANDI!                            "
+echo "   ✅ KURULUM TAMAMLANDI! (SIFIR TOKEN)              "
 echo "   ComfyUI arka planda çalışıyor.                    "
 echo "   Logları görmek için: tmux attach -t comfyui       "
 echo "======================================================"
