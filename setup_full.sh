@@ -118,7 +118,7 @@ download "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/
          "models/clip" "t5xxl_fp8_e4m3fn.safetensors" "T5-XXL FP8"
 
 # C. VAE (resmi + token gerektirmez)
-download "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors" \
+download "https://huggingface.co/camenduru/FLUX.1-dev/resolve/main/ae.safetensors" \
          "models/vae" "ae.safetensors" "Flux VAE"
 
 # D. ControlNet Union Pro (güncel doğru kaynak)
