@@ -1,7 +1,7 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  COMFYUI + FLUX.1 DEV — WEEKEND RICH SETUP (setup_weekend.sh)  ║
-# ║  Son Güncelleme : 18 Ağustos 2026                               ║
+# ║  Son Güncelleme : 19 Ağustos 2026                               ║
 # ║  Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM               ║
 # ║  İçerik         : Full + T5 FP16 + Redux + Depth/Canny/HED      ║
 # ║                   + SeedVR2 3B FP8 + face tools                 ║
@@ -123,7 +123,7 @@ step "ADIM 4/9: Klasörler"
 mkdir -p models/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,xlabs/ipadapters,style_models,ultralytics/bbox,ultralytics/segm}
 ok "Klasörler hazır"
 
-# ── 5. İNDİRME ────────────────────────────────────────────────────
+# ── 5. İNDİRME FONKSİYONU ─────────────────────────────────────────
 download() {
     local URL="$1"
     local DIR="$2"
@@ -162,7 +162,7 @@ download() {
     fi
 }
 
-# ── 6. TEMEL MODELLER ─────────────────────────────────────────────
+# ── 6. TEMEL MODELLER (FULL) ──────────────────────────────────────
 step "ADIM 5/9: Temel Modeller (Full paket)"
 
 download \
@@ -213,11 +213,11 @@ download \
 # ── 7. ZENGİN WEEKEND EKSTRALARI ──────────────────────────────────
 step "ADIM 6/9: Zengin Weekend Ekstraları (~+18–22 GB)"
 
-# T5 FP16 — 64 GB RAM'de kalite
+# T5 FP16 — 64 GB RAM için kalite encoder
 download \
     "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \
     "models/text_encoders" "t5xxl_fp16.safetensors" \
-    "T5-XXL FP16 (~9.8 GB) — kalite encoder"
+    "T5-XXL FP16 (~9.8 GB)"
 
 # Redux — görsel stil / varyasyon
 download \
@@ -242,21 +242,18 @@ download \
     "XLabs HED ControlNet (~1.5 GB)" \
     || info "HED atlandı (zorunlu değil)"
 
-# Eski (404):
-# Comfy-Org/SeedVR2/.../seedvr2_3b_fp8_e4m3fn.safetensors
-
-# Yeni (çalışan):
+# SeedVR2 3B FP8 (numz — güncel çalışan yol)
 download \
-  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
-  "models/diffusion_models" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
-  "SeedVR2 3B FP8 (upscale)" \
-  || info "SeedVR2 atlandı (zorunlu değil)"
+    "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
+    "models/diffusion_models" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
+    "SeedVR2 3B FP8 (upscale)" \
+    || info "SeedVR2 model atlandı (zorunlu değil)"
 
 download \
-  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors" \
-  "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
-  "SeedVR2 EMA VAE" \
-  || true
+    "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors" \
+    "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
+    "SeedVR2 EMA VAE" \
+    || info "SeedVR2 VAE atlandı (zorunlu değil)"
 
 # Alternatif klasik upscaler
 download \
@@ -316,20 +313,20 @@ verify() {
     fi
 }
 
-verify "models/diffusion_models/flux1-dev-fp8.safetensors" "Flux Dev FP8"
-verify "models/text_encoders/clip_l.safetensors" "CLIP-L"
-verify "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors" "T5 FP8"
-verify "models/text_encoders/t5xxl_fp16.safetensors" "T5 FP16"
-verify "models/vae/ae.safetensors" "VAE"
-verify "models/controlnet/flux-dev-controlnet-union-pro.safetensors" "ControlNet Union"
-verify "models/controlnet/flux-depth-controlnet-v3.safetensors" "Depth CN"
-verify "models/controlnet/flux-canny-controlnet-v3.safetensors" "Canny CN"
-verify "models/style_models/flux1-redux-dev.safetensors" "Redux"
-verify "models/loras/flux_realism.safetensors" "Realism LoRA"
-verify "models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP"
-verify "models/xlabs/ipadapters/ip_adapter.safetensors" "IP-Adapter"
-verify "models/ipadapter/ip_adapter.safetensors" "IP-Adapter symlink"
-verify "models/diffusion_models/seedvr2_3b_fp8_e4m3fn.safetensors" "SeedVR2 3B"
+verify "models/diffusion_models/flux1-dev-fp8.safetensors"              "Flux Dev FP8"
+verify "models/text_encoders/clip_l.safetensors"                        "CLIP-L"
+verify "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors"              "T5 FP8"
+verify "models/text_encoders/t5xxl_fp16.safetensors"                    "T5 FP16"
+verify "models/vae/ae.safetensors"                                      "VAE"
+verify "models/controlnet/flux-dev-controlnet-union-pro.safetensors"    "ControlNet Union"
+verify "models/controlnet/flux-depth-controlnet-v3.safetensors"         "Depth CN"
+verify "models/controlnet/flux-canny-controlnet-v3.safetensors"         "Canny CN"
+verify "models/style_models/flux1-redux-dev.safetensors"                "Redux"
+verify "models/loras/flux_realism.safetensors"                          "Realism LoRA"
+verify "models/clip_vision/sigclip_vision_patch14_384.safetensors"      "SigCLIP"
+verify "models/xlabs/ipadapters/ip_adapter.safetensors"                 "IP-Adapter"
+verify "models/ipadapter/ip_adapter.safetensors"                        "IP-Adapter symlink"
+verify "models/diffusion_models/seedvr2_ema_3b_fp8_e4m3fn.safetensors"  "SeedVR2 3B FP8"
 
 echo ""
 if [ $ERRORS -eq 0 ]; then
@@ -355,7 +352,8 @@ echo -e "${GREEN}║  Durdur  : tmux kill-session -t comfyui                    
 echo -e "${GREEN}║  Port    : 8188                                              ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
 echo -e "${GREEN}║  Ekstra  : T5 FP16 · Redux · Depth/Canny/HED · SeedVR2 3B    ║${NC}"
-echo -e "${GREEN}║  Not     : DualCLIPLoader'da T5 olarak t5xxl_fp16 seçebilirsin║${NC}"
+echo -e "${GREEN}║  Not     : DualCLIPLoader'da T5 = t5xxl_fp16 seçebilirsin     ║${NC}"
+echo -e "${GREEN}║  SeedVR2 : Gerekirse Manager'dan SeedVR2 node kur            ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${CYAN}Hafta içi hızlı → setup_full.sh${NC}"
