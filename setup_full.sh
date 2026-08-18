@@ -226,6 +226,12 @@ download \
     "models/xlabs/ipadapters" "ip_adapter.safetensors" \
     "XLabs IP-Adapter"
 
+# I. CLIP ViT-L/14 (XLabs Flux IP-Adapter için zorunlu)
+download \
+    "https://huggingface.co/openai/clip-vit-large-patch14/resolve/main/model.safetensors" \
+    "models/clip_vision" "clip-vit-large-patch14.safetensors" \
+    "CLIP ViT-L/14 (XLabs IP-Adapter)"
+
 # ── 6. UYUMLULUK SYMLINK'LERİ ─────────────────────────────────────
 step "ADIM 6/7: Uyumluluk Symlink'leri"
 
