@@ -1,14 +1,14 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  COMFYUI + FLUX.1 DEV — WEEKEND SETUP (setup_weekend.sh)       ║
+# ║  COMFYUI + FLUX.1 DEV — WEEKEND RICH SETUP (setup_weekend.sh)  ║
 # ║  Son Güncelleme : 18 Ağustos 2026                               ║
-# ║  Temel (full) + ekstra LoRA / upscale / face detail / utility   ║
-# ║  Hedef          : Hafta sonu daha zengin, stabil deneme         ║
+# ║  Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM               ║
+# ║  İçerik         : Full + T5 FP16 + Redux + Depth/Canny/HED      ║
+# ║                   + SeedVR2 3B FP8 + face tools                 ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail
 
-# ── AYARLAR ───────────────────────────────────────────────────────
 COMFY_DIR="/workspace/ComfyUI"
 COMFY_TAG="v0.33.1"
 TORCH_INDEX="https://download.pytorch.org/whl/cu130"
@@ -28,25 +28,25 @@ fail()  { echo -e "  ${RED}❌ $1${NC}"; }
 info()  { echo -e "  ${CYAN}→ $1${NC}"; }
 
 # ── 0. DISK ───────────────────────────────────────────────────────
-step "ADIM 0/8: Disk Alanı Kontrolü"
+step "ADIM 0/9: Disk Alanı Kontrolü"
 mkdir -p /workspace
 AVAIL=$(df -BG /workspace 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || echo "0")
-if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 55 ]; then
-    fail "Sadece ${AVAIL}GB boş alan var. Weekend paketi için minimum 55GB önerilir!"
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 70 ]; then
+    fail "Sadece ${AVAIL}GB boş. Zengin weekend paketi için minimum 70GB önerilir!"
     exit 1
 fi
 ok "Disk alanı yeterli: ${AVAIL:-?}GB"
 
 # ── 1. SİSTEM ─────────────────────────────────────────────────────
-step "ADIM 1/8: Sistem Paketleri"
+step "ADIM 1/9: Sistem Paketleri"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     git git-lfs aria2 tmux ffmpeg libgl1 libglib2.0-0 \
     python3-venv python3-pip curl wget ca-certificates > /dev/null 2>&1 || true
 ok "Sistem paketleri kuruldu"
 
-# ── 2. COMFYUI (PIN) ──────────────────────────────────────────────
-step "ADIM 2/8: ComfyUI Kurulumu (tag: $COMFY_TAG)"
+# ── 2. COMFYUI ────────────────────────────────────────────────────
+step "ADIM 2/9: ComfyUI ($COMFY_TAG)"
 
 if [ -d "$COMFY_DIR" ] && [ -d "$COMFY_DIR/.git" ]; then
     cd "$COMFY_DIR"
@@ -60,7 +60,7 @@ if [ -d "$COMFY_DIR" ] && [ -d "$COMFY_DIR/.git" ]; then
             git fetch --depth=1 origin tag "$COMFY_TAG"
             git checkout "$COMFY_TAG"
         }
-        ok "ComfyUI $COMFY_TAG'e alındı"
+        ok "ComfyUI $COMFY_TAG"
     fi
 else
     rm -rf "$COMFY_DIR"
@@ -70,22 +70,19 @@ else
 fi
 
 cd "$COMFY_DIR"
-
 if [ ! -d "venv" ]; then
     python3 -m venv venv
     ok "Virtualenv oluşturuldu"
 fi
 source venv/bin/activate
 pip install --upgrade pip wheel setuptools -q
-
-info "PyTorch (cu130) kuruluyor..."
+info "PyTorch cu130..."
 pip install --quiet torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install --quiet -r requirements.txt
-ok "ComfyUI bağımlılıkları kuruldu"
+ok "Bağımlılıklar kuruldu"
 
-# ── 3. CUSTOM NODE'LAR (temel + weekend) ──────────────────────────
-step "ADIM 3/8: Custom Node'lar"
-
+# ── 3. CUSTOM NODE'LAR ────────────────────────────────────────────
+step "ADIM 3/9: Custom Node'lar"
 mkdir -p custom_nodes
 cd custom_nodes
 
@@ -103,11 +100,11 @@ declare -A NODES=(
 
 for name in "${!NODES[@]}"; do
     if [ -d "$name" ]; then
-        ok "$name zaten var"
+        ok "$name mevcut"
     else
-        info "$name klonlanıyor..."
+        info "$name..."
         if git clone --depth=1 "${NODES[$name]}" "$name" 2>/dev/null; then
-            ok "$name kuruldu"
+            ok "$name"
         else
             fail "$name klonlanamadı (devam)"
         fi
@@ -116,19 +113,17 @@ done
 
 for req in */requirements.txt; do
     [ -f "$req" ] || continue
-    info "Bağımlılık: $req"
     pip install --quiet -r "$req" 2>/dev/null || true
 done
 ok "Custom node'lar hazır"
-
 cd "$COMFY_DIR"
 
 # ── 4. KLASÖRLER ──────────────────────────────────────────────────
-step "ADIM 4/8: Model Klasörleri"
-mkdir -p models/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,xlabs/ipadapters,ultralytics/bbox,ultralytics/segm}
+step "ADIM 4/9: Klasörler"
+mkdir -p models/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,xlabs/ipadapters,style_models,ultralytics/bbox,ultralytics/segm}
 ok "Klasörler hazır"
 
-# ── 5. İNDİRME FONKSİYONU ─────────────────────────────────────────
+# ── 5. İNDİRME ────────────────────────────────────────────────────
 download() {
     local URL="$1"
     local DIR="$2"
@@ -147,28 +142,28 @@ download() {
     local MIRROR_URL="${URL/https:\/\/huggingface.co/https:\/\/hf-mirror.com}"
 
     if aria2c -c -x 16 -s 16 -k 1M \
-        --max-tries=8 --retry-wait=4 --timeout=60 --connect-timeout=20 \
+        --max-tries=8 --retry-wait=4 --timeout=90 --connect-timeout=25 \
         --console-log-level=error \
         "$MIRROR_URL" -d "$DIR" -o "$FILE" 2>/dev/null; then
         ok "$DESC"
         return 0
     fi
 
-    info "Mirror başarısız, orijinal deneniyor..."
+    info "Mirror başarısız → orijinal..."
     if aria2c -c -x 16 -s 16 -k 1M \
-        --max-tries=8 --retry-wait=4 --timeout=60 --connect-timeout=20 \
+        --max-tries=8 --retry-wait=4 --timeout=90 --connect-timeout=25 \
         --console-log-level=error \
         "$URL" -d "$DIR" -o "$FILE"; then
         ok "$DESC"
         return 0
     else
-        fail "$DESC İNDİRİLEMEDİ!"
+        fail "$DESC İNDİRİLEMEDİ"
         return 1
     fi
 }
 
-# ── 6. TEMEL MODELLER (full ile aynı) ─────────────────────────────
-step "ADIM 5/8: Temel Modeller (Flux + encoder + VAE + ControlNet + IP-Adapter)"
+# ── 6. TEMEL MODELLER ─────────────────────────────────────────────
+step "ADIM 5/9: Temel Modeller (Full paket)"
 
 download \
     "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors" \
@@ -198,7 +193,7 @@ download \
 download \
     "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
     "models/loras" "flux_realism.safetensors" \
-    "Realism LoRA (XLabs)"
+    "Realism LoRA"
 
 download \
     "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth" \
@@ -215,37 +210,78 @@ download \
     "models/xlabs/ipadapters" "ip_adapter.safetensors" \
     "XLabs IP-Adapter"
 
-# ── 7. WEEKEND EKSTRALARI ─────────────────────────────────────────
-step "ADIM 6/8: Weekend Ekstraları (LoRA + upscale + face)"
+# ── 7. ZENGİN WEEKEND EKSTRALARI ──────────────────────────────────
+step "ADIM 6/9: Zengin Weekend Ekstraları (~+18–22 GB)"
 
-# İkinci upscaler (alternatif kalite)
+# T5 FP16 — 64 GB RAM'de kalite
+download \
+    "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors" \
+    "models/text_encoders" "t5xxl_fp16.safetensors" \
+    "T5-XXL FP16 (~9.8 GB) — kalite encoder"
+
+# Redux — görsel stil / varyasyon
+download \
+    "https://huggingface.co/Comfy-Org/Flux1-Redux-Dev/resolve/main/flux1-redux-dev.safetensors" \
+    "models/style_models" "flux1-redux-dev.safetensors" \
+    "Flux Redux (~130 MB)"
+
+# XLabs spesifik ControlNet'ler
+download \
+    "https://huggingface.co/XLabs-AI/flux-controlnet-depth-v3/resolve/main/flux-depth-controlnet-v3.safetensors" \
+    "models/controlnet" "flux-depth-controlnet-v3.safetensors" \
+    "XLabs Depth ControlNet (~1.5 GB)"
+
+download \
+    "https://huggingface.co/XLabs-AI/flux-controlnet-canny-v3/resolve/main/flux-canny-controlnet-v3.safetensors" \
+    "models/controlnet" "flux-canny-controlnet-v3.safetensors" \
+    "XLabs Canny ControlNet (~1.5 GB)"
+
+download \
+    "https://huggingface.co/XLabs-AI/flux-controlnet-hed-v3/resolve/main/flux-hed-controlnet-v3.safetensors" \
+    "models/controlnet" "flux-hed-controlnet-v3.safetensors" \
+    "XLabs HED ControlNet (~1.5 GB)" \
+    || info "HED atlandı (zorunlu değil)"
+
+# SeedVR2 3B FP8 + VAE
+download \
+    "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/seedvr2_3b_fp8_e4m3fn.safetensors" \
+    "models/diffusion_models" "seedvr2_3b_fp8_e4m3fn.safetensors" \
+    "SeedVR2 3B FP8 (upscale)"
+
+download \
+    "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/seedvr2_ema_vae_fp16.safetensors" \
+    "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
+    "SeedVR2 EMA VAE" \
+    || download \
+        "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/ema_vae_fp16.safetensors" \
+        "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
+        "SeedVR2 EMA VAE (alternatif isim)" \
+        || info "SeedVR2 VAE atlandı"
+
+# Alternatif klasik upscaler
 download \
     "https://huggingface.co/uwg/upscaler/resolve/main/ESRGAN/4x_NMKD-Siax_200k.pth" \
     "models/upscale_models" "4x_NMKD-Siax_200k.pth" \
-    "4x NMKD-Siax (alternatif upscaler)" \
-    || info "Alternatif upscaler atlandı (zorunlu değil)"
+    "4x NMKD-Siax" \
+    || true
 
-# Face detector (Impact-Pack FaceDetailer için)
+# Face detectors (Impact-Pack)
 download \
     "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt" \
     "models/ultralytics/bbox" "face_yolov8m.pt" \
-    "Face YOLO v8m (FaceDetailer)" \
-    || info "Face YOLO atlandı (zorunlu değil)"
+    "Face YOLO v8m" \
+    || true
 
 download \
     "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8n.pt" \
     "models/ultralytics/bbox" "face_yolov8n.pt" \
-    "Face YOLO v8n (hızlı face detect)" \
-    || info "Face YOLO n atlandı (zorunlu değil)"
+    "Face YOLO v8n" \
+    || true
 
-# Not: Ek stil LoRA'ları (hand detail vb.) Civitai linkleri sık değiştiği için
-# buraya sabit HF linki olanları koyduk. İstediğin karakter/stil LoRA'larını
-# models/loras/ altına manuel de atabilirsin.
-
-ok "Weekend ekstraları tamamlandı (bazı opsiyoneller fail olsa da devam)"
+ok "Weekend ekstraları tamamlandı"
 
 # ── 8. SYMLINK'LER ────────────────────────────────────────────────
-step "ADIM 7/8: Uyumluluk Symlink'leri"
+step "ADIM 7/9: Symlink'ler"
 
 ln -sf "$COMFY_DIR/models/diffusion_models/flux1-dev-fp8.safetensors" \
        "$COMFY_DIR/models/unet/flux1-dev-fp8.safetensors" 2>/dev/null || true
@@ -254,15 +290,17 @@ ln -sf "$COMFY_DIR/models/text_encoders/clip_l.safetensors" \
        "$COMFY_DIR/models/clip/clip_l.safetensors" 2>/dev/null || true
 ln -sf "$COMFY_DIR/models/text_encoders/t5xxl_fp8_e4m3fn.safetensors" \
        "$COMFY_DIR/models/clip/t5xxl_fp8_e4m3fn.safetensors" 2>/dev/null || true
+ln -sf "$COMFY_DIR/models/text_encoders/t5xxl_fp16.safetensors" \
+       "$COMFY_DIR/models/clip/t5xxl_fp16.safetensors" 2>/dev/null || true
 
-# IP-Adapter her iki yere de
+# IP-Adapter her iki yere
 ln -sf "$COMFY_DIR/models/xlabs/ipadapters/ip_adapter.safetensors" \
        "$COMFY_DIR/models/ipadapter/ip_adapter.safetensors" 2>/dev/null || true
 
-ok "Symlink'ler oluşturuldu (IP-Adapter dahil)"
+ok "Symlink'ler tamam (IP-Adapter dahil)"
 
 # ── 9. DOĞRULAMA ──────────────────────────────────────────────────
-step "ADIM 8/8: Doğrulama"
+step "ADIM 8/9: Doğrulama"
 ERRORS=0
 
 verify() {
@@ -279,43 +317,47 @@ verify() {
 }
 
 verify "models/diffusion_models/flux1-dev-fp8.safetensors" "Flux Dev FP8"
-verify "models/text_encoders/clip_l.safetensors"             "CLIP-L"
-verify "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors"  "T5-XXL FP8"
-verify "models/vae/ae.safetensors"                         "VAE"
-verify "models/controlnet/flux-dev-controlnet-union-pro.safetensors" "ControlNet Union Pro"
-verify "models/loras/flux_realism.safetensors"              "Realism LoRA"
-verify "models/upscale_models/4x-UltraSharp.pth"            "4x-UltraSharp"
-verify "models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP Vision"
-verify "models/xlabs/ipadapters/ip_adapter.safetensors"     "IP-Adapter (xlabs)"
-verify "models/ipadapter/ip_adapter.safetensors"            "IP-Adapter (symlink)"
+verify "models/text_encoders/clip_l.safetensors" "CLIP-L"
+verify "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors" "T5 FP8"
+verify "models/text_encoders/t5xxl_fp16.safetensors" "T5 FP16"
+verify "models/vae/ae.safetensors" "VAE"
+verify "models/controlnet/flux-dev-controlnet-union-pro.safetensors" "ControlNet Union"
+verify "models/controlnet/flux-depth-controlnet-v3.safetensors" "Depth CN"
+verify "models/controlnet/flux-canny-controlnet-v3.safetensors" "Canny CN"
+verify "models/style_models/flux1-redux-dev.safetensors" "Redux"
+verify "models/loras/flux_realism.safetensors" "Realism LoRA"
+verify "models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP"
+verify "models/xlabs/ipadapters/ip_adapter.safetensors" "IP-Adapter"
+verify "models/ipadapter/ip_adapter.safetensors" "IP-Adapter symlink"
+verify "models/diffusion_models/seedvr2_3b_fp8_e4m3fn.safetensors" "SeedVR2 3B"
 
 echo ""
 if [ $ERRORS -eq 0 ]; then
-    ok "KRİTİK MODELLER TAMAM — SIFIR ZORUNLU HATA!"
+    ok "KRİTİK MODELLER TAMAM"
 else
-    fail "$ERRORS adet kritik model eksik!"
+    fail "$ERRORS kritik eksik — log'a bak"
 fi
 
 # ── BAŞLAT ────────────────────────────────────────────────────────
+step "ADIM 9/9: ComfyUI Başlatılıyor"
 cd "$COMFY_DIR"
 tmux kill-session -t comfyui 2>/dev/null || true
-
 tmux new-session -d -s comfyui \
     "cd $COMFY_DIR && source venv/bin/activate && python main.py --listen 0.0.0.0 --port 8188 --highvram"
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║  ✅ WEEKEND KURULUM TAMAMLANDI                               ║${NC}"
+echo -e "${GREEN}║  ✅ WEEKEND RICH KURULUM TAMAMLANDI                          ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  Tag         : $COMFY_TAG                                   ║${NC}"
-echo -e "${GREEN}║  Log         : tmux attach -t comfyui                        ║${NC}"
-echo -e "${GREEN}║  Durdur      : tmux kill-session -t comfyui                  ║${NC}"
-echo -e "${GREEN}║  Port        : 8188                                          ║${NC}"
+echo -e "${GREEN}║  Tag     : $COMFY_TAG                                       ║${NC}"
+echo -e "${GREEN}║  Log     : tmux attach -t comfyui                            ║${NC}"
+echo -e "${GREEN}║  Durdur  : tmux kill-session -t comfyui                      ║${NC}"
+echo -e "${GREEN}║  Port    : 8188                                              ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  Ekstralar   : 2. upscaler, face YOLO, was-node-suite        ║${NC}"
-echo -e "${GREEN}║  LoRA tip    : Realism (strength ~0.6–0.9 dene)              ║${NC}"
+echo -e "${GREEN}║  Ekstra  : T5 FP16 · Redux · Depth/Canny/HED · SeedVR2 3B    ║${NC}"
+echo -e "${GREEN}║  Not     : DualCLIPLoader'da T5 olarak t5xxl_fp16 seçebilirsin║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${CYAN}Hafta içi hızlı kurulum için: setup_full.sh${NC}"
-echo -e "${CYAN}Hafta sonu zengin paket için: setup_weekend.sh (bu script)${NC}"
+echo -e "${CYAN}Hafta içi hızlı → setup_full.sh${NC}"
+echo -e "${CYAN}Hafta sonu zengin → setup_weekend.sh (bu script)${NC}"
 echo ""
