@@ -242,21 +242,21 @@ download \
     "XLabs HED ControlNet (~1.5 GB)" \
     || info "HED atlandı (zorunlu değil)"
 
-# SeedVR2 3B FP8 + VAE
+# Eski (404):
+# Comfy-Org/SeedVR2/.../seedvr2_3b_fp8_e4m3fn.safetensors
+
+# Yeni (çalışan):
 download \
-    "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/seedvr2_3b_fp8_e4m3fn.safetensors" \
-    "models/diffusion_models" "seedvr2_3b_fp8_e4m3fn.safetensors" \
-    "SeedVR2 3B FP8 (upscale)"
+  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
+  "models/diffusion_models" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
+  "SeedVR2 3B FP8 (upscale)" \
+  || info "SeedVR2 atlandı (zorunlu değil)"
 
 download \
-    "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/seedvr2_ema_vae_fp16.safetensors" \
-    "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
-    "SeedVR2 EMA VAE" \
-    || download \
-        "https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/ema_vae_fp16.safetensors" \
-        "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
-        "SeedVR2 EMA VAE (alternatif isim)" \
-        || info "SeedVR2 VAE atlandı"
+  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors" \
+  "models/vae" "seedvr2_ema_vae_fp16.safetensors" \
+  "SeedVR2 EMA VAE" \
+  || true
 
 # Alternatif klasik upscaler
 download \
