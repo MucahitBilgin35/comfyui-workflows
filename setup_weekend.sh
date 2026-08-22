@@ -96,6 +96,7 @@ declare -A NODES=(
     ["ComfyUI_IPAdapter_plus"]="https://github.com/cubiq/ComfyUI_IPAdapter_plus.git"
     ["x-flux-comfyui"]="https://github.com/XLabs-AI/x-flux-comfyui.git"
     ["was-node-suite-comfyui"]="https://github.com/WASasquatch/was-node-suite-comfyui.git"
+    ["ComfyUI-Pixaroma"]="https://github.com/pixaroma/ComfyUI-Pixaroma.git"
 )
 
 for name in "${!NODES[@]}"; do
