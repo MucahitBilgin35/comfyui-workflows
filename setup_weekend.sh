@@ -197,6 +197,57 @@ download \
     "Realism LoRA"
 
 download \
+  "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
+  "models/loras" "flux_realism.safetensors" \
+  "Realism LoRA (XLabs)"
+
+download \
+  "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-add-details/resolve/main/FLUX-dev-lora-add_details.safetensors" \
+  "models/loras" "flux_add_details.safetensors" \
+  "Add Details LoRA (Shakker)"
+
+download \
+  "https://huggingface.co/alimama-creative/FLUX.1-Turbo-Alpha/resolve/main/diffusion_pytorch_model.safetensors" \
+  "models/loras" "flux_turbo_alpha.safetensors" \
+  "Flux Turbo Alpha (8-step)"
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/anime_lora.safetensors" \
+  "models/loras" "flux_anime.safetensors" \
+  "Anime LoRA (XLabs)" \
+  || true
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/scenery_lora.safetensors" \
+  "models/loras" "flux_scenery.safetensors" \
+  "Scenery LoRA (XLabs)" \
+  || true
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/mjv6_lora.safetensors" \
+  "models/loras" "flux_mjv6.safetensors" \
+  "MJ v6 stil LoRA (XLabs)" \
+  || true
+
+download \
+  "https://huggingface.co/alvdansen/flux_film_foto/resolve/main/araminta_k_flux_film_foto.safetensors" \
+  "models/loras" "flux_film_foto.safetensors" \
+  "Film Foto LoRA" \
+  || true
+
+download \
+  "https://huggingface.co/strangerzonehf/Flux-Super-Realism-LoRA/resolve/main/super-realism.safetensors" \
+  "models/loras" "flux_super_realism.safetensors" \
+  "Super Realism LoRA" \
+  || true
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/art_lora.safetensors" \
+  "models/loras" "flux_art.safetensors" \
+  "Art LoRA (XLabs)" \
+  || true
+
+download \
     "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth" \
     "models/upscale_models" "4x-UltraSharp.pth" \
     "4x-UltraSharp"
