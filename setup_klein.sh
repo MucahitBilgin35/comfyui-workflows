@@ -1,17 +1,18 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║ COMFYUI + FLUX.2 KLEIN 9B/4B — FULL RICH SETUP (setup_klein.sh) ║
-# ║ Son Güncelleme : 23 Ağustos 2026 (düzeltmeler eklendi)          ║
+# ║ COMFYUI + FLUX.2 KLEIN 9B/4B — RICH SETUP (setup_klein.sh)     ║
+# ║ Son Güncelleme : 23 Ağustos 2026                                ║
 # ║ Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM                 ║
-# ║ İçerik         : 9B Distilled + 9B Base + 4B + Qwen TE'ler       ║
-# ║                + SeedVR2 + Detail LoRA + Face tools              ║
-# ║                + controlnet_aux + Impact + Pixaroma + GGUF       ║
+# ║ İçerik         : 9B Distilled + Base + 4B + Qwen TE + VAE       ║
+# ║                + SeedVR2 3B FP8 + Detail/Face LoRA'lar           ║
+# ║                + Manager + Impact + Pixaroma + controlnet_aux    ║
+# ║                + GGUF + essentials                              ║
 # ╚══════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
 COMFY_DIR="/workspace/ComfyUI"
-COMFY_TAG="v0.3.45"
-TORCH_INDEX="https://download.pytorch.org/whl/cu124"
+COMFY_TAG="v0.33.1"
+TORCH_INDEX="https://download.pytorch.org/whl/cu130"
 HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export HF_ENDPOINT
 export HF_HUB_ENABLE_HF_TRANSFER=1
@@ -38,25 +39,24 @@ export HF_TOKEN
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${HF_TOKEN}" \
   "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-9b-fp8" || echo "000")
 if [ "$CODE" != "200" ]; then
-  fail "Token gated modele erişemiyor (HTTP $CODE). Model lisansını (Agree) onayladığınızdan emin olun."
+  fail "Token gated modele erişemiyor (HTTP $CODE). https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8 adresinden Agree yapın."
 fi
-ok "HF_TOKEN geçerli ve yetkili (HTTP 200)"
+ok "HF_TOKEN geçerli (HTTP 200)"
 
-# Base model için de kontrol (opsiyonel ama tavsiye edilir)
 CODE_BASE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${HF_TOKEN}" \
   "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-base-9b-fp8" || echo "000")
 if [ "$CODE_BASE" != "200" ]; then
-  info "⚠️  Base 9B FP8 için lisans henüz onaylanmamış (HTTP $CODE_BASE). https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8 adresinden Agree yapın."
+  info "⚠️  Base 9B FP8 lisansı henüz onaylanmamış. İsterseniz Agree yapın."
 else
   ok "Base 9B FP8 lisansı da onaylı"
 fi
 
-# ── 1. DİSK ALANI KONTROLÜ ─────────────────────────────────────────
+# ── 1. DİSK ───────────────────────────────────────────────────────
 step "ADIM 1/9: Disk Alanı Kontrolü"
 mkdir -p /workspace
 AVAIL=$(df -BG /workspace 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || echo "0")
-if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 50 ]; then
-  fail "Sadece ${AVAIL}GB boş alan var. Rich Klein paketi için en az 50GB önerilir!"
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 60 ]; then
+  fail "Sadece ${AVAIL}GB boş. Rich Klein paketi için en az 60GB önerilir!"
 fi
 ok "Disk alanı yeterli: ${AVAIL:-?}GB"
 
@@ -68,7 +68,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   python3-venv python3-pip curl wget ca-certificates > /dev/null 2>&1 || true
 ok "Sistem paketleri kuruldu"
 
-# ── 3. COMFYUI KURULUMU ───────────────────────────────────────────
+# ── 3. COMFYUI ────────────────────────────────────────────────────
 step "ADIM 3/9: ComfyUI Hazırlanıyor"
 if [ ! -d "$COMFY_DIR/.git" ]; then
   git clone --depth 1 --branch "$COMFY_TAG" https://github.com/Comfy-Org/ComfyUI.git "$COMFY_DIR" 2>/dev/null \
@@ -78,10 +78,10 @@ else
   git fetch --tags --quiet || true
   git checkout "$COMFY_TAG" 2>/dev/null || true
 fi
-ok "ComfyUI kodları hazır"
+ok "ComfyUI ($COMFY_TAG) hazır"
 
-# ── 4. PYTHON ORTAMI & PYTORCH ────────────────────────────────────
-step "ADIM 4/9: Python venv ve PyTorch Kurulumu"
+# ── 4. PYTHON + TORCH ─────────────────────────────────────────────
+step "ADIM 4/9: Python venv ve PyTorch"
 cd "$COMFY_DIR"
 if [ ! -d "venv" ]; then
   python3 -m venv venv
@@ -92,16 +92,16 @@ pip install -q torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install -q -r requirements.txt
 pip install -q huggingface_hub hf_transfer 2>/dev/null || true
 pip install -q -U "huggingface_hub[cli]" 2>/dev/null || true
-ok "venv + PyTorch ortamı hazır"
+ok "venv + PyTorch (cu130) hazır"
 
 # ── 5. KLASÖR YAPISI ──────────────────────────────────────────────
 step "ADIM 5/9: Klasör Yapısı"
-mkdir -p "$COMFY_DIR/models/"{diffusion_models,text_encoders,vae,loras,controlnet,upscale_models,clip_vision}
+mkdir -p "$COMFY_DIR/models/"{diffusion_models,text_encoders,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,xlabs/ipadapters}
 mkdir -p "$COMFY_DIR/custom_nodes" "$COMFY_DIR/input" "$COMFY_DIR/output"
-ok "Model ve çalışma klasörleri hazır"
+ok "Klasörler hazır"
 
 # ── 6. CUSTOM NODE'LAR ────────────────────────────────────────────
-step "ADIM 6/9: Custom Node'lar Klonlanıyor"
+step "ADIM 6/9: Custom Node'lar"
 cd "$COMFY_DIR/custom_nodes"
 
 clone_node() {
@@ -110,7 +110,7 @@ clone_node() {
     ok "$name zaten var"
   else
     info "$name indiriliyor..."
-    git clone --depth 1 "$url" "$name" 2>/dev/null && ok "$name" || info "$name atlandı (hata)"
+    git clone --depth 1 "$url" "$name" 2>/dev/null && ok "$name" || info "$name atlandı (repo yok/hata)"
   fi
 }
 
@@ -121,11 +121,11 @@ clone_node "ComfyUI-Pixaroma"             "https://github.com/pixaroma/ComfyUI-P
 clone_node "ComfyUI-GGUF"                 "https://github.com/city96/ComfyUI-GGUF.git"
 clone_node "comfyui_controlnet_aux"       "https://github.com/Fannovel16/comfyui_controlnet_aux.git"
 clone_node "ComfyUI_essentials"           "https://github.com/cubiq/ComfyUI_essentials.git"
+# Klein yardımcıları (varsa)
 clone_node "one-node-flux-2-klein"        "https://github.com/yanokusnir-ai/one-node-flux-2-klein.git"
 clone_node "ComfyUI-Flux2Klein-Enhancer"  "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer.git"
 clone_node "Comfyui-flux2klein-Lora-loader" "https://github.com/capitan01R/Comfyui-flux2klein-Lora-loader.git"
 
-# Bağımlılık kurulumları
 if [ -f "ComfyUI-Impact-Pack/install.py" ]; then
   python "ComfyUI-Impact-Pack/install.py" 2>/dev/null || true
 fi
@@ -134,9 +134,9 @@ for d in */; do
     pip install -q -r "${d}requirements.txt" 2>/dev/null || true
   fi
 done
-ok "Tüm custom node'lar kuruldu"
+ok "Custom node'lar kuruldu"
 
-# ── 7. İNDİRME FONKSİYONU (ARIA2C + AUTH) ────────────────────────
+# ── 7. İNDİRME FONKSİYONU ─────────────────────────────────────────
 cd "$COMFY_DIR"
 
 download() {
@@ -153,23 +153,19 @@ download() {
 
   info "$label indiriliyor..."
 
-  # 1. Önce huggingface-cli dene (gated modellerde en güvenilir)
+  # 1. huggingface-cli (gated için en güvenilir)
   if command -v huggingface-cli >/dev/null 2>&1; then
-    local repo
+    local repo file
     repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
-    local file
-    file=$(basename "${url%%\?*}")   # query string varsa temizle
-
+    file=$(basename "${url%%\?*}")
     if [ -n "$repo" ] && [ -n "$file" ]; then
       if huggingface-cli download "$repo" "$file" \
            --local-dir "$COMFY_DIR/$dir" \
            --token "$HF_TOKEN" >/dev/null 2>&1; then
-        # huggingface-cli bazen dosyayı doğru isimle koyar
-        if [ -f "$dest" ] || [ -f "$COMFY_DIR/$dir/$file" ]; then
-          # isim farklıysa düzelt
-          if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
-            mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
-          fi
+        if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
+          mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
+        fi
+        if [ -f "$dest" ]; then
           ok "$label (hf-cli)"
           return 0
         fi
@@ -177,7 +173,7 @@ download() {
     fi
   fi
 
-  # 2. aria2c fallback
+  # 2. aria2c
   local auth_header=""
   if [ "$is_gated" = true ]; then
     auth_header="--header=Authorization: Bearer ${HF_TOKEN} --header=User-Agent: huggingface_hub"
@@ -190,7 +186,7 @@ download() {
     return 0
   fi
 
-  # 3. Mirror sadece public modeller için
+  # 3. Mirror (sadece public)
   if [ "$is_gated" = false ]; then
     local mirror_url="${url/https:\/\/huggingface.co/$HF_ENDPOINT}"
     if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
@@ -200,31 +196,36 @@ download() {
     fi
   fi
 
-  info "⚠️  $label indirilemedi (opsiyonel olabilir)"
+  info "⚠️  $label indirilemedi (opsiyonel)"
   return 1
 }
-# ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
-step "ADIM 7/9: Ana ve Zengin Model Paketleri İndiriliyor"
 
-# 1. Ana Distilled 9B (GATED)
+# ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
+step "ADIM 7/9: Model Paketleri İndiriliyor"
+
+# Ana Distilled 9B FP8 (GATED)
 download \
   "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors" \
   "models/diffusion_models" "flux-2-klein-9b-fp8.safetensors" \
   "Klein 9B Distilled FP8" true
 
-# 2. Base 9B (GATED) — lisans ayrı onaylanmalı
+# Base 9B FP8 (GATED) — opsiyonel
 download \
   "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8/resolve/main/flux-2-klein-base-9b-fp8.safetensors" \
   "models/diffusion_models" "flux-2-klein-base-9b-fp8.safetensors" \
   "Klein 9B Base FP8" true || true
 
-# 3. Klein 4B Distilled
+# 4B Distilled (public tercih)
+download \
+  "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors" \
+  "models/diffusion_models" "flux-2-klein-4b-fp8.safetensors" \
+  "Klein 4B Distilled FP8" false || \
 download \
   "https://huggingface.co/Comfy-Org/flux2-klein/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors" \
   "models/diffusion_models" "flux-2-klein-4b.safetensors" \
-  "Klein 4B Distilled" false || true
+  "Klein 4B (Comfy-Org)" false || true
 
-# 4. Text Encoders
+# Text Encoders
 download \
   "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors" \
   "models/text_encoders" "qwen_3_8b_fp8mixed.safetensors" \
@@ -235,13 +236,13 @@ download \
   "models/text_encoders" "qwen_3_4b.safetensors" \
   "Qwen3-4B Text Encoder" false || true
 
-# 5. VAE
+# VAE
 download \
   "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors" \
   "models/vae" "flux2-vae.safetensors" \
   "Flux2 VAE" false
 
-# 6. Upscalers & SeedVR2  (DÜZELTİLDİ: doğru dosya adı)
+# SeedVR2 + Upscaler
 download \
   "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
   "models/diffusion_models" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
@@ -252,27 +253,22 @@ download \
   "models/upscale_models" "4x-UltraSharp.pth" \
   "4x-UltraSharp" false || true
 
-# 7. LoRA'lar & Ekstra Araçlar
-
-# Realistic Detail LoRA (DÜZELTİLDİ: doğru dosya adı + URL encode)
+# LoRA'lar (opsiyonel, hata verirse devam)
 download \
   "https://huggingface.co/SOLRICKS/Flux2-Klein-9B-Realistic-Detail/resolve/main/Flux2%20Klein%209B%20Realistic%20Detail%20LoRA.safetensors" \
   "models/loras" "flux2_klein_9b_srx_detail_lora.safetensors" \
   "Realistic Detail LoRA" false || true
 
-# Base to Turbo LoRA (DÜZELTİLDİ: yeni repo + dosya adı)
 download \
   "https://huggingface.co/anyMODE/Flux-2-Klein-Base-9B-to-turbo-lora/resolve/main/klein_9B_Turbo_r128.safetensors" \
   "models/loras" "klein_9b_base_to_turbo_r128.safetensors" \
   "Base to Turbo LoRA" false || true
 
-# BFS Head Swap 9B (DÜZELTİLDİ: doğru dosya adı)
 download \
   "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors" \
   "models/loras" "BFS_Head_Swap_v1_9b.safetensors" \
   "BFS Head Swap 9B" false || true
 
-# RefControl Depth LoRA
 download \
   "https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-9B-reference-depth-lora/resolve/main/flux2_klein_9b_refcontrol_depth.safetensors" \
   "models/loras" "flux2_klein_9b_refcontrol_depth.safetensors" \
@@ -313,7 +309,13 @@ echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║  ✅ FLUX.2 KLEIN RICH KURULUM TAMAMLANDI                     ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
+echo -e "${GREEN}║  Tag     : $COMFY_TAG                                       ║${NC}"
 echo -e "${GREEN}║  Log     : tmux attach -t comfyui                            ║${NC}"
 echo -e "${GREEN}║  Durdur  : tmux kill-session -t comfyui                      ║${NC}"
 echo -e "${GREEN}║  Port    : 8188                                              ║${NC}"
+echo -e "${GREEN}║                                                              ║${NC}"
+echo -e "${GREEN}║  Ana model : flux-2-klein-9b-fp8.safetensors (4-step)        ║${NC}"
+echo -e "${GREEN}║  TE        : qwen_3_8b_fp8mixed.safetensors                  ║${NC}"
+echo -e "${GREEN}║  VAE       : flux2-vae.safetensors                           ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo ""
