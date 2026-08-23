@@ -203,11 +203,41 @@ download \
     "models/controlnet" "flux-dev-controlnet-union-pro.safetensors" \
     "ControlNet Union Pro"
 
-# E. Realism LoRA
+
+    # --- LORA PAKETİ (FULL) ---
+
+    # E. Realism LoRA
 download \
     "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
     "models/loras" "flux_realism.safetensors" \
     "Realism LoRA"
+    
+download \
+  "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
+  "models/loras" "flux_realism.safetensors" \
+  "Realism LoRA (XLabs)"
+
+download \
+  "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-add-details/resolve/main/FLUX-dev-lora-add_details.safetensors" \
+  "models/loras" "flux_add_details.safetensors" \
+  "Add Details LoRA (Shakker)"
+
+download \
+  "https://huggingface.co/alimama-creative/FLUX.1-Turbo-Alpha/resolve/main/diffusion_pytorch_model.safetensors" \
+  "models/loras" "flux_turbo_alpha.safetensors" \
+  "Flux Turbo Alpha (8-step)"
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/anime_lora.safetensors" \
+  "models/loras" "flux_anime.safetensors" \
+  "Anime LoRA (XLabs)" \
+  || true
+
+download \
+  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/scenery_lora.safetensors" \
+  "models/loras" "flux_scenery.safetensors" \
+  "Scenery LoRA (XLabs)" \
+  || true
 
 # F. 4x-UltraSharp
 download \
