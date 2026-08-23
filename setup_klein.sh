@@ -1,13 +1,12 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  COMFYUI + FLUX.2 KLEIN 9B/4B — FULL RICH SETUP (setup_klein.sh)║
-# ║  Son Güncelleme : 23 Ağustos 2026                               ║
-# ║  Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM               ║
-# ║  İçerik         : 9B Distilled + 9B Base + 4B + Qwen TE'ler    ║
-# ║                   + SeedVR2 + Detail LoRA + Face tools          ║
-# ║                   + controlnet_aux + Impact + Pixaroma + GGUF   ║
+# ║ COMFYUI + FLUX.2 KLEIN 9B/4B — FULL RICH SETUP (setup_klein.sh) ║
+# ║ Son Güncelleme : 23 Ağustos 2026 (düzeltmeler eklendi)          ║
+# ║ Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM                 ║
+# ║ İçerik         : 9B Distilled + 9B Base + 4B + Qwen TE'ler       ║
+# ║                + SeedVR2 + Detail LoRA + Face tools              ║
+# ║                + controlnet_aux + Impact + Pixaroma + GGUF       ║
 # ╚══════════════════════════════════════════════════════════════════╝
-
 set -euo pipefail
 
 COMFY_DIR="/workspace/ComfyUI"
@@ -23,10 +22,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-step()  { echo -e "\n${YELLOW}══════════════════════════════════════════════════${NC}"; echo -e "${YELLOW} $1${NC}"; echo -e "${YELLOW}══════════════════════════════════════════════════${NC}"; }
-ok()    { echo -e "  ${GREEN}✅ $1${NC}"; }
-fail()  { echo -e "  ${RED}❌ $1${NC}"; exit 1; }
-info()  { echo -e "  ${CYAN}→ $1${NC}"; }
+step() { echo -e "\n${YELLOW}══════════════════════════════════════════════════${NC}"; echo -e "${YELLOW} $1${NC}"; echo -e "${YELLOW}══════════════════════════════════════════════════${NC}"; }
+ok()   { echo -e "  ${GREEN}✅ $1${NC}"; }
+fail() { echo -e "  ${RED}❌ $1${NC}"; exit 1; }
+info() { echo -e "  ${CYAN}→ $1${NC}"; }
 
 # ── 0. TOKEN KONTROLÜ ─────────────────────────────────────────────
 step "ADIM 0/9: HF_TOKEN Kontrolü"
@@ -42,6 +41,15 @@ if [ "$CODE" != "200" ]; then
   fail "Token gated modele erişemiyor (HTTP $CODE). Model lisansını (Agree) onayladığınızdan emin olun."
 fi
 ok "HF_TOKEN geçerli ve yetkili (HTTP 200)"
+
+# Base model için de kontrol (opsiyonel ama tavsiye edilir)
+CODE_BASE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${HF_TOKEN}" \
+  "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-base-9b-fp8" || echo "000")
+if [ "$CODE_BASE" != "200" ]; then
+  info "⚠️  Base 9B FP8 için lisans henüz onaylanmamış (HTTP $CODE_BASE). https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8 adresinden Agree yapın."
+else
+  ok "Base 9B FP8 lisansı da onaylı"
+fi
 
 # ── 1. DİSK ALANI KONTROLÜ ─────────────────────────────────────────
 step "ADIM 1/9: Disk Alanı Kontrolü"
@@ -105,15 +113,15 @@ clone_node() {
   fi
 }
 
-clone_node "ComfyUI-Manager"                "https://github.com/ltdrdata/ComfyUI-Manager.git"
-clone_node "rgthree-comfy"                  "https://github.com/rgthree/rgthree-comfy.git"
-clone_node "ComfyUI-Impact-Pack"            "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
-clone_node "ComfyUI-Pixaroma"               "https://github.com/pixaroma/ComfyUI-Pixaroma.git"
-clone_node "ComfyUI-GGUF"                   "https://github.com/city96/ComfyUI-GGUF.git"
-clone_node "comfyui_controlnet_aux"         "https://github.com/Fannovel16/comfyui_controlnet_aux.git"
-clone_node "ComfyUI_essentials"             "https://github.com/cubiq/ComfyUI_essentials.git"
-clone_node "one-node-flux-2-klein"          "https://github.com/yanokusnir-ai/one-node-flux-2-klein.git"
-clone_node "ComfyUI-Flux2Klein-Enhancer"    "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer.git"
+clone_node "ComfyUI-Manager"              "https://github.com/ltdrdata/ComfyUI-Manager.git"
+clone_node "rgthree-comfy"                "https://github.com/rgthree/rgthree-comfy.git"
+clone_node "ComfyUI-Impact-Pack"          "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+clone_node "ComfyUI-Pixaroma"             "https://github.com/pixaroma/ComfyUI-Pixaroma.git"
+clone_node "ComfyUI-GGUF"                 "https://github.com/city96/ComfyUI-GGUF.git"
+clone_node "comfyui_controlnet_aux"       "https://github.com/Fannovel16/comfyui_controlnet_aux.git"
+clone_node "ComfyUI_essentials"           "https://github.com/cubiq/ComfyUI_essentials.git"
+clone_node "one-node-flux-2-klein"        "https://github.com/yanokusnir-ai/one-node-flux-2-klein.git"
+clone_node "ComfyUI-Flux2Klein-Enhancer"  "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer.git"
 clone_node "Comfyui-flux2klein-Lora-loader" "https://github.com/capitan01R/Comfyui-flux2klein-Lora-loader.git"
 
 # Bağımlılık kurulumları
@@ -165,7 +173,7 @@ download() {
     fi
   fi
 
-  info "⚠️ $label indirilemedi (opsiyonel olabilir)"
+  info "⚠️  $label indirilemedi (opsiyonel olabilir)"
   return 1
 }
 
@@ -178,7 +186,7 @@ download \
   "models/diffusion_models" "flux-2-klein-9b-fp8.safetensors" \
   "Klein 9B Distilled FP8" true
 
-# 2. Base 9B (GATED)
+# 2. Base 9B (GATED) — lisans ayrı onaylanmalı
 download \
   "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8/resolve/main/flux-2-klein-base-9b-fp8.safetensors" \
   "models/diffusion_models" "flux-2-klein-base-9b-fp8.safetensors" \
@@ -207,10 +215,10 @@ download \
   "models/vae" "flux2-vae.safetensors" \
   "Flux2 VAE" false
 
-# 6. Upscalers & SeedVR2
+# 6. Upscalers & SeedVR2  (DÜZELTİLDİ: doğru dosya adı)
 download \
-  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8.safetensors" \
-  "models/diffusion_models" "seedvr2_ema_3b_fp8.safetensors" \
+  "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
+  "models/diffusion_models" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" \
   "SeedVR2 3B FP8" false || true
 
 download \
@@ -219,21 +227,26 @@ download \
   "4x-UltraSharp" false || true
 
 # 7. LoRA'lar & Ekstra Araçlar
+
+# Realistic Detail LoRA (DÜZELTİLDİ: doğru dosya adı + URL encode)
 download \
-  "https://huggingface.co/SOLRICKS/Flux2-Klein-9B-Realistic-Detail/resolve/main/flux2_klein_9b_srx_detail_lora.safetensors" \
+  "https://huggingface.co/SOLRICKS/Flux2-Klein-9B-Realistic-Detail/resolve/main/Flux2%20Klein%209B%20Realistic%20Detail%20LoRA.safetensors" \
   "models/loras" "flux2_klein_9b_srx_detail_lora.safetensors" \
   "Realistic Detail LoRA" false || true
 
+# Base to Turbo LoRA (DÜZELTİLDİ: yeni repo + dosya adı)
 download \
-  "https://huggingface.co/anyMODE/Klein-Base-to-Turbo-LoRA/resolve/main/klein_9b_base_to_turbo_r128.safetensors" \
+  "https://huggingface.co/anyMODE/Flux-2-Klein-Base-9B-to-turbo-lora/resolve/main/klein_9B_Turbo_r128.safetensors" \
   "models/loras" "klein_9b_base_to_turbo_r128.safetensors" \
   "Base to Turbo LoRA" false || true
 
+# BFS Head Swap 9B (DÜZELTİLDİ: doğru dosya adı)
 download \
-  "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/BFS_Head_Swap_v1_9b.safetensors" \
+  "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_9b_step3500_rank128.safetensors" \
   "models/loras" "BFS_Head_Swap_v1_9b.safetensors" \
   "BFS Head Swap 9B" false || true
 
+# RefControl Depth LoRA
 download \
   "https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-9B-reference-depth-lora/resolve/main/flux2_klein_9b_refcontrol_depth.safetensors" \
   "models/loras" "flux2_klein_9b_refcontrol_depth.safetensors" \
@@ -242,12 +255,13 @@ download \
 # ── 9. DOĞRULAMA ──────────────────────────────────────────────────
 step "ADIM 8/9: Kurulum Doğrulaması"
 ERRORS=0
+
 verify() {
   local path="$1" name="$2"
   if [ -f "$COMFY_DIR/$path" ] && [ -s "$COMFY_DIR/$path" ]; then
     ok "$name"
   else
-    fail "$name EKSİK → $path"
+    echo -e "  ${RED}❌ $name EKSİK → $path${NC}"
     ERRORS=$((ERRORS+1))
   fi
 }
