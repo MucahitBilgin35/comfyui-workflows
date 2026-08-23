@@ -91,6 +91,7 @@ pip install -q --upgrade pip wheel setuptools
 pip install -q torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install -q -r requirements.txt
 pip install -q huggingface_hub hf_transfer 2>/dev/null || true
+pip install -q -U "huggingface_hub[cli]" 2>/dev/null || true
 ok "venv + PyTorch ortamı hazır"
 
 # ── 5. KLASÖR YAPISI ──────────────────────────────────────────────
@@ -151,19 +152,45 @@ download() {
   fi
 
   info "$label indiriliyor..."
+
+  # 1. Önce huggingface-cli dene (gated modellerde en güvenilir)
+  if command -v huggingface-cli >/dev/null 2>&1; then
+    local repo
+    repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
+    local file
+    file=$(basename "${url%%\?*}")   # query string varsa temizle
+
+    if [ -n "$repo" ] && [ -n "$file" ]; then
+      if huggingface-cli download "$repo" "$file" \
+           --local-dir "$COMFY_DIR/$dir" \
+           --token "$HF_TOKEN" >/dev/null 2>&1; then
+        # huggingface-cli bazen dosyayı doğru isimle koyar
+        if [ -f "$dest" ] || [ -f "$COMFY_DIR/$dir/$file" ]; then
+          # isim farklıysa düzelt
+          if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
+            mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
+          fi
+          ok "$label (hf-cli)"
+          return 0
+        fi
+      fi
+    fi
+  fi
+
+  # 2. aria2c fallback
   local auth_header=""
   if [ "$is_gated" = true ]; then
-    auth_header="--header=Authorization: Bearer ${HF_TOKEN}"
+    auth_header="--header=Authorization: Bearer ${HF_TOKEN} --header=User-Agent: huggingface_hub"
   fi
 
   if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
-    --max-tries=5 --retry-wait=3 --timeout=60 --connect-timeout=20 \
+    --max-tries=8 --retry-wait=4 --timeout=120 --connect-timeout=30 \
     $auth_header "$url" -d "$COMFY_DIR/$dir" -o "$filename" 2>/dev/null; then
     ok "$label"
     return 0
   fi
 
-  # Mirror fallback (Sadece public modeller için)
+  # 3. Mirror sadece public modeller için
   if [ "$is_gated" = false ]; then
     local mirror_url="${url/https:\/\/huggingface.co/$HF_ENDPOINT}"
     if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
@@ -176,7 +203,6 @@ download() {
   info "⚠️  $label indirilemedi (opsiyonel olabilir)"
   return 1
 }
-
 # ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
 step "ADIM 7/9: Ana ve Zengin Model Paketleri İndiriliyor"
 
