@@ -2,10 +2,8 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  COMFYUI + MINIMAX H3 (FL2VA + Ref2VA + SES) — ULTRA SETUP      ║
 # ║  Hedef GPU      : RTX 4090 / RTX 5090 (24 GB+ VRAM)              ║
-# ║  Özellikler     : Python API Downloader (Hataya Karşı Korumalı) ║
-# ║                   + SageAttention (%25 Hızlandırma)             ║
-# ║                   + VideoHelperSuite (Ses/Video Birleştirici)    ║
-# ║                   + FL2VA & Ref2VA Pruned INT8 + NVFP4 TE        ║
+# ║  İçerik         : SageAttention + VideoHelperSuite + FFmpeg      ║
+# ║                   + FL2VA / Ref2VA Pruned INT8 + NVFP4 TE        ║
 # ║                   + Video & Audio VAE + 8-Step Turbo LoRA        ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
@@ -30,9 +28,9 @@ fail()  { echo -e "  ${RED}❌ $1${NC}"; exit 1; }
 info()  { echo -e "  ${CYAN}→ $1${NC}"; }
 
 # ── 0. HF_TOKEN ───────────────────────────────────────────────────
-step "ADIM 0/10: HF_TOKEN Kontrolü"
+step "ADIM 0/10: HF_TOKEN Kontrolü (Opsiyonel)"
 if [ -z "${HF_TOKEN:-}" ]; then
-  info "HF_TOKEN belirtilmedi. Public indirme yapılacak (Token tanımlanması önerilir)."
+  info "HF_TOKEN yok – Public indirme yapılacak (hız limitine takılmamak için token önerilir)."
 else
   HF_TOKEN="$(echo -n "$HF_TOKEN" | tr -d '[:space:]')"
   export HF_TOKEN
@@ -43,13 +41,13 @@ fi
 step "ADIM 1/10: Disk Alanı Kontrolü"
 mkdir -p /workspace
 AVAIL=$(df -BG /workspace 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || echo "0")
-if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 85 ]; then
-  fail "Sadece ${AVAIL}GB boş. Tüm H3 modelleri için en az 85-100GB önerilir!"
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 80 ]; then
+  fail "Sadece ${AVAIL}GB boş. Tüm H3 modelleri için en az 80-100GB önerilir!"
 fi
 ok "Disk alanı yeterli: ${AVAIL:-?}GB"
 
 # ── 2. SİSTEM PAKETLERİ & FFMPEG ──────────────────────────────────
-step "ADIM 2/10: Sistem Paketleri & C Derleyicileri"
+step "ADIM 2/10: Sistem Paketleri, C Derleyicileri & FFmpeg"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   git git-lfs aria2 tmux ffmpeg libgl1 libglib2.0-0 \
@@ -68,7 +66,7 @@ else
   git fetch --tags --quiet || true
   git checkout "$COMFY_TAG" 2>/dev/null || true
 fi
-ok "ComfyUI ($COMFY_TAG) hazır"
+ok "ComfyUI ($COMFY_TAG) hazır (H3 native desteği aktif)"
 
 # ── 4. PYTHON + TORCH + SAGEATTENTION ─────────────────────────────
 step "ADIM 4/10: Python venv, PyTorch & SageAttention Kurulumu"
@@ -81,7 +79,7 @@ pip install -q --upgrade pip wheel setuptools
 pip install -q torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install -q -r requirements.txt
 pip install -q huggingface_hub einops timm accelerate transformers soundfile 2>/dev/null || true
-pip install -q sageattention 2>/dev/null && ok "SageAttention kuruldu (%20-30 hız artışı)" || info "SageAttention atlandı (opsiyonel)"
+pip install -q sageattention 2>/dev/null && ok "SageAttention kuruldu (H3 için %25 hız artışı)" || info "SageAttention atlandı (opsiyonel)"
 ok "venv ve PyTorch hazır"
 
 # ── 5. KLASÖRLER ──────────────────────────────────────────────────
@@ -144,7 +142,7 @@ download() {
   file=$(echo "$url" | sed -n 's|https://huggingface.co/[^/]*/[^/]*/resolve/[^/]*/\(.*\)|\1|p')
   [ -z "$file" ] && file=$(basename "${url%%\?*}")
 
-  # 1. Python huggingface_hub API (Kalıcı ve Kesin Çözüm)
+  # 1. Python huggingface_hub API
   if [ -n "$repo" ] && [ -n "$file" ]; then
     if python3 -c "
 import sys, os, shutil
@@ -168,7 +166,6 @@ try:
         shutil.move(downloaded_path, dest)
     sys.exit(0)
 except Exception as e:
-    print(f'HF Hatası: {e}', file=sys.stderr)
     sys.exit(1)
 " 2>/dev/null; then
       if [ -f "$dest" ]; then
@@ -206,44 +203,44 @@ except Exception as e:
   fi
 
   if [ "$is_gated" = true ]; then
-    fail "$label indirilemedi!"
+    fail "$label indirilemedi! (Gated erişimi kontrol edin)"
   else
     info "⚠️  $label indirilemedi (opsiyonel)"
     return 1
   fi
 }
 
-# ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
+# ── 8. MODEL İNDİRMELERİ (Doğrulanmış Dizinler) ───────────────────
 step "ADIM 7/10: MiniMax H3 Model Paketleri İndiriliyor"
 
-# 1. Ana I2V / T2V FL2VA Modeli (Pruned INT8)
+# 1. Ana I2V / T2V FL2VA Modeli (Pruned INT8 ~19.5 GB)
 download \
-  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/split_files/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
+  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
   "models/diffusion_models" "minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
-  "H3 FL2VA pruned INT8 (Ana Model)" false
+  "H3 FL2VA pruned INT8 (Ana Model)" true
 
 # 2. Ref2VA Modeli (Referans Video/Ses/Görsel Modeli)
 download \
-  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/split_files/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors" \
+  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors" \
   "models/diffusion_models" "minimax_h3_ref2va_pruned_int8_convrot.safetensors" \
   "H3 Ref2VA pruned INT8 (Opsiyonel)" false || true
 
-# 3. Text Encoder (Qwen3-VL-32B NVFP4 AWQ)
+# 3. Text Encoder (Qwen3-VL-32B NVFP4 AWQ ~14.6 GB)
 download \
-  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/split_files/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" \
+  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" \
   "models/text_encoders" "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" \
-  "Qwen3-VL-32B NVFP4 Text Encoder" false
+  "Qwen3-VL-32B NVFP4 Text Encoder" true
 
 # 4. Video & Audio VAE
 download \
-  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/split_files/vae/minimax_h3_video_vae_fp16.safetensors" \
+  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors" \
   "models/vae" "minimax_h3_video_vae_fp16.safetensors" \
-  "MiniMax H3 Video VAE" false
+  "MiniMax H3 Video VAE" true
 
 download \
-  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/split_files/vae/minimax_h3_audio_vae_fp32.safetensors" \
+  "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors" \
   "models/vae" "minimax_h3_audio_vae_fp32.safetensors" \
-  "MiniMax H3 Audio VAE (Stereo)" false
+  "MiniMax H3 Audio VAE (Stereo)" true
 
 # 5. Turbo LoRA (8-Step)
 download \
