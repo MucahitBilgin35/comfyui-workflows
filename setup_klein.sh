@@ -1,21 +1,18 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  COMFYUI + FLUX.2 KLEIN 9B — RICH SETUP (setup_klein.sh)       ║
-# ║  Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM               ║
-# ║  İçerik         : 9B FP8 + Qwen3-8B + VAE + GGUF Q8_0           ║
-# ║                   + Enhancer LoRA + UltraSharpV2                ║
-# ║                   + Florence2 + EsesImageCompare + kjnodes      ║
-# ║                   + Impact + Pixaroma + GGUF + essentials       ║
+# ║ COMFYUI + FLUX.2 KLEIN 9B/4B — RICH SETUP (setup_klein.sh)     ║
+# ║ Son Güncelleme : 2026 - Tam Düzeltilmiş Sürüm                   ║
+# ║ Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM                 ║
+# ║ İçerik         : GCC/C Derleyiciler + Florence2 + EsesImage      ║
+# ║                + kjnodes + NAG + UltraSharpV2 + Enhancer LoRA    ║
 # ╚══════════════════════════════════════════════════════════════════╝
-
 set -euo pipefail
 
 COMFY_DIR="/workspace/ComfyUI"
 COMFY_TAG="v0.33.1"
 TORCH_INDEX="https://download.pytorch.org/whl/cu130"
-HF_ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}"
+HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export HF_ENDPOINT
-export HF_XET_HIGH_PERFORMANCE=1
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -23,15 +20,15 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-step()  { echo -e "\n${YELLOW}══════════════════════════════════════════════════${NC}"; echo -e "${YELLOW} $1${NC}"; echo -e "${YELLOW}══════════════════════════════════════════════════${NC}"; }
-ok()    { echo -e "  ${GREEN}✅ $1${NC}"; }
-fail()  { echo -e "  ${RED}❌ $1${NC}"; exit 1; }
-info()  { echo -e "  ${CYAN}→ $1${NC}"; }
+step() { echo -e "\n${YELLOW}══════════════════════════════════════════════════${NC}"; echo -e "${YELLOW} $1${NC}"; echo -e "${YELLOW}══════════════════════════════════════════════════${NC}"; }
+ok()   { echo -e "  ${GREEN}✅ $1${NC}"; }
+fail() { echo -e "  ${RED}❌ $1${NC}"; exit 1; }
+info() { echo -e "  ${CYAN}→ $1${NC}"; }
 
-# ── 0. HF_TOKEN ───────────────────────────────────────────────────
-step "ADIM 0/10: HF_TOKEN Kontrolü"
+# ── 0. TOKEN KONTROLÜ ─────────────────────────────────────────────
+step "ADIM 0/9: HF_TOKEN Kontrolü"
 if [ -z "${HF_TOKEN:-}" ]; then
-  fail "HF_TOKEN bulunamadı! Önce şunu çalıştırın:\n  export HF_TOKEN=hf_xxxxxxxxxxxxxxxx"
+  fail "HF_TOKEN bulunamadı! 'export HF_TOKEN=hf_...' yapıp tekrar çalıştırın."
 fi
 HF_TOKEN="$(echo -n "$HF_TOKEN" | tr -d '[:space:]')"
 export HF_TOKEN
@@ -39,31 +36,31 @@ export HF_TOKEN
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${HF_TOKEN}" \
   "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-9b-fp8" || echo "000")
 if [ "$CODE" != "200" ]; then
-  fail "Token gated modele erişemiyor (HTTP $CODE).\n  https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8 adresinden şartları onaylayın (Agree)."
+  fail "Token gated modele erişemiyor (HTTP $CODE). https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8 adresinden lisansı onaylayın."
 fi
-ok "HF_TOKEN geçerli (9B FP8 erişimi onaylandı)"
+ok "HF_TOKEN geçerli (HTTP 200)"
 
-# ── 1. DİSK ───────────────────────────────────────────────────────
-step "ADIM 1/10: Disk Alanı Kontrolü"
+# ── 1. DİSK KONTROLÜ ──────────────────────────────────────────────
+step "ADIM 1/9: Disk Alanı Kontrolü"
 mkdir -p /workspace
 AVAIL=$(df -BG /workspace 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G' || echo "0")
-if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 70 ]; then
-  fail "Sadece ${AVAIL}GB boş. Klein rich + GGUF paketi için en az 70GB önerilir!"
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 60 ]; then
+  fail "Sadece ${AVAIL}GB boş. Tam kurulum için en az 60GB önerilir!"
 fi
 ok "Disk alanı yeterli: ${AVAIL:-?}GB"
 
-# ── 2. SİSTEM ─────────────────────────────────────────────────────
-step "ADIM 2/10: Sistem Paketleri & Derleyiciler"
+# ── 2. SİSTEM PAKETLERİ (C Derleyicileri & Python Header Dosyaları) ─
+step "ADIM 2/9: Sistem Paketleri & C Derleyicileri"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   git git-lfs aria2 tmux ffmpeg libgl1 libglib2.0-0 \
   python3-venv python3-pip python3-dev build-essential gcc g++ \
   curl wget ca-certificates > /dev/null 2>&1 || true
 ldconfig
-ok "Sistem paketleri ve C derleyicileri kuruldu"
+ok "Sistem paketleri ve C derleyicileri (gcc, g++, python3-dev) kuruldu"
 
 # ── 3. COMFYUI ────────────────────────────────────────────────────
-step "ADIM 3/10: ComfyUI"
+step "ADIM 3/9: ComfyUI Hazırlanıyor"
 if [ ! -d "$COMFY_DIR/.git" ]; then
   git clone --depth 1 --branch "$COMFY_TAG" https://github.com/Comfy-Org/ComfyUI.git "$COMFY_DIR" 2>/dev/null \
     || git clone --depth 1 https://github.com/Comfy-Org/ComfyUI.git "$COMFY_DIR"
@@ -74,8 +71,8 @@ else
 fi
 ok "ComfyUI ($COMFY_TAG) hazır"
 
-# ── 4. VENV + TORCH ───────────────────────────────────────────────
-step "ADIM 4/10: Python venv + PyTorch"
+# ── 4. PYTHON + TORCH ─────────────────────────────────────────────
+step "ADIM 4/9: Python venv ve PyTorch"
 cd "$COMFY_DIR"
 if [ ! -d "venv" ]; then
   python3 -m venv venv
@@ -85,16 +82,17 @@ pip install -q --upgrade pip wheel setuptools
 pip install -q torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install -q -r requirements.txt
 pip install -q huggingface_hub einops timm 2>/dev/null || true
-ok "venv + PyTorch (cu130) hazır"
+pip install -q -U "huggingface_hub[cli]" 2>/dev/null || true
+ok "venv, PyTorch ve temel kütüphaneler hazır"
 
-# ── 5. KLASÖRLER ──────────────────────────────────────────────────
-step "ADIM 5/10: Klasör Yapısı"
-mkdir -p "$COMFY_DIR/models/"{diffusion_models,text_encoders,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,unet}
+# ── 5. KLASÖR YAPISI ──────────────────────────────────────────────
+step "ADIM 5/9: Klasör Yapısı"
+mkdir -p "$COMFY_DIR/models/"{diffusion_models,text_encoders,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,xlabs/ipadapters}
 mkdir -p "$COMFY_DIR/custom_nodes" "$COMFY_DIR/input" "$COMFY_DIR/output"
 ok "Klasörler hazır"
 
-# ── 6. CUSTOM NODES ───────────────────────────────────────────────
-step "ADIM 6/10: Custom Node'lar"
+# ── 6. CUSTOM NODE'LAR ────────────────────────────────────────────
+step "ADIM 6/9: Custom Node'lar Kuruluyor"
 cd "$COMFY_DIR/custom_nodes"
 
 clone_node() {
@@ -103,7 +101,7 @@ clone_node() {
     ok "$name zaten var"
   else
     info "$name indiriliyor..."
-    git clone --depth 1 "$url" "$name" 2>/dev/null && ok "$name" || info "$name atlandı"
+    git clone --depth 1 "$url" "$name" 2>/dev/null && ok "$name" || info "$name atlandı (repo yok/hata)"
   fi
 }
 
@@ -126,11 +124,13 @@ if [ -f "ComfyUI-Impact-Pack/install.py" ]; then
   python "ComfyUI-Impact-Pack/install.py" 2>/dev/null || true
 fi
 for d in */; do
-  [ -f "${d}requirements.txt" ] && pip install -q -r "${d}requirements.txt" 2>/dev/null || true
+  if [ -f "${d}requirements.txt" ]; then
+    pip install -q -r "${d}requirements.txt" 2>/dev/null || true
+  fi
 done
 ok "Custom node'lar kuruldu"
 
-# ── 7. İNDİRME FONKSİYONU ─────────────────────────────────────────
+# ── 7. İNDİRME FONKSİYONU (Düzeltilmiş Header ve HF CLI) ──────────
 cd "$COMFY_DIR"
 
 download() {
@@ -138,7 +138,7 @@ download() {
   local is_gated="${5:-false}"
   local dest="$COMFY_DIR/$dir/$filename"
 
-  if [ -f "$dest" ] && [ "$(stat -c%s "$dest" 2>/dev/null || echo 0)" -gt 5000000 ]; then
+  if [ -f "$dest" ] && [ "$(stat -c%s "$dest" 2>/dev/null || echo 0)" -gt 10000000 ]; then
     local size
     size=$(du -h "$dest" | cut -f1)
     ok "$label ($size) — zaten var"
@@ -146,139 +146,86 @@ download() {
   fi
 
   info "$label indiriliyor..."
-  mkdir -p "$COMFY_DIR/$dir"
 
   local repo file
   repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
-  file=$(echo "$url" | sed -n 's|https://huggingface.co/[^/]*/[^/]*/resolve/[^/]*/\(.*\)|\1|p')
-  [ -z "$file" ] && file=$(basename "${url%%\?*}")
+  file=$(basename "${url%%\?*}")
 
-  # ── 1) Python huggingface_hub API (Modern & Kesin Çözüm) ────────
-  if [ -n "$repo" ] && [ -n "$file" ]; then
-    if python3 -c "
-import sys, os, shutil
-from huggingface_hub import hf_hub_download
-
-repo_id = '$repo'
-filename = '$file'
-local_dir = '$COMFY_DIR/$dir'
-dest = '$dest'
-token = os.environ.get('HF_TOKEN', None)
-
-try:
-    downloaded_path = hf_hub_download(
-        repo_id=repo_id,
-        filename=filename,
-        local_dir=local_dir,
-        token=token
-    )
-    if downloaded_path != dest and os.path.exists(downloaded_path):
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.move(downloaded_path, dest)
-    sys.exit(0)
-except Exception as e:
-    print(f'Hugging Face API Hatası: {e}', file=sys.stderr)
-    sys.exit(1)
-" 2>/dev/null; then
+  # 1. Güncel 'hf download' ile dene
+  if command -v hf >/dev/null 2>&1 && [ -n "$repo" ] && [ -n "$file" ]; then
+    if hf download "$repo" "$file" --local-dir "$COMFY_DIR/$dir" --token "$HF_TOKEN" >/dev/null 2>&1; then
+      if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
+        mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
+      fi
       if [ -f "$dest" ]; then
-        find "$COMFY_DIR/$dir" -mindepth 1 -type d -empty -delete 2>/dev/null || true
-        ok "$label (hf_hub)"
+        ok "$label (hf)"
         return 0
       fi
     fi
   fi
 
-  # ── 2) aria2c (Düzeltilmiş Header Dizisi ile Yedek Yöntem) ─────
-  if command -v aria2c >/dev/null 2>&1; then
-    local -a aria_opts=(
-      -c -x 16 -s 16 -k 1M
-      --console-log-level=warn
-      --max-tries=8 --retry-wait=5 --timeout=120 --connect-timeout=30
-      -d "$COMFY_DIR/$dir" -o "$filename"
-    )
-    if [ -n "${HF_TOKEN:-}" ]; then
-      aria_opts+=(--header="Authorization: Bearer ${HF_TOKEN}")
-    fi
-
-    if aria2c "${aria_opts[@]}" "$url" 2>/dev/null; then
-      if [ -f "$dest" ]; then
-        ok "$label (aria2c)"
-        return 0
-      fi
-    fi
-  fi
-
-  # ── 3) curl (Son Çare) ──────────────────────────────────────────
-  if [ -n "${HF_TOKEN:-}" ]; then
-    curl -s -fL -H "Authorization: Bearer ${HF_TOKEN}" -o "$dest" "$url" 2>/dev/null && ok "$label (curl)" && return 0 || true
-  else
-    curl -s -fL -o "$dest" "$url" 2>/dev/null && ok "$label (curl)" && return 0 || true
-  fi
-
+  # 2. Düzeltilmiş Aria2c ile dene (Dizi kullanarak header hatası engellendi)
+  local auth_args=()
   if [ "$is_gated" = true ]; then
-    fail "$label indirilemedi! (Gated model – Token yetkisini ve repo erişim onayınızı kontrol edin)"
-  else
-    info "⚠️  $label indirilemedi (opsiyonel)"
-    return 1
+    auth_args=(--header="Authorization: Bearer ${HF_TOKEN}")
   fi
+
+  if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
+    --max-tries=8 --retry-wait=4 --timeout=120 --connect-timeout=30 \
+    "${auth_args[@]}" "$url" -d "$COMFY_DIR/$dir" -o "$filename" 2>/dev/null; then
+    ok "$label (aria2c)"
+    return 0
+  fi
+
+  # 3. Mirror (Sadece public modeller için)
+  if [ "$is_gated" = false ]; then
+    local mirror_url="${url/https:\/\/huggingface.co/$HF_ENDPOINT}"
+    if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
+      "$mirror_url" -d "$COMFY_DIR/$dir" -o "$filename" 2>/dev/null; then
+      ok "$label (mirror)"
+      return 0
+    fi
+  fi
+
+  info "⚠️  $label indirilemedi!"
+  return 1
 }
 
 # ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
-step "ADIM 7/10: Model Paketleri İndiriliyor"
+step "ADIM 7/9: Model Paketleri İndiriliyor"
 
-# Ana 9B Distilled FP8 (GATED)
+# 1. Ana Distilled 9B FP8 (GATED)
 download \
   "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors" \
   "models/diffusion_models" "flux-2-klein-9b-fp8.safetensors" \
   "Klein 9B Distilled FP8" true
 
-# GGUF Q8_0 (workflow için)
-download \
-  "https://huggingface.co/unsloth/FLUX.2-klein-9B-GGUF/resolve/main/flux-2-klein-9b-Q8_0.gguf" \
-  "models/unet" "flux-2-klein-9b-Q8_0.gguf" \
-  "Klein 9B GGUF Q8_0" false || true
-
-# Text Encoder
+# 2. Text Encoder (Qwen3-8B FP8)
 download \
   "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors" \
   "models/text_encoders" "qwen_3_8b_fp8mixed.safetensors" \
   "Qwen3-8B FP8 Text Encoder" false
 
-# VAE
+# 3. VAE
 download \
   "https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors" \
   "models/vae" "flux2-vae.safetensors" \
   "Flux2 VAE" false
 
-# Upscaler'lar
-download \
-  "https://huggingface.co/Kim2091/UltraSharp/resolve/main/4x-UltraSharp.pth" \
-  "models/upscale_models" "4x-UltraSharp.pth" \
-  "4x-UltraSharp" false || true
-
+# 4. Upscaler (UltraSharpV2)
 download \
   "https://huggingface.co/Kim2091/UltraSharpV2/resolve/main/4x-UltraSharpV2.pth" \
   "models/upscale_models" "4x-UltraSharpV2.pth" \
   "4x-UltraSharpV2" false || true
 
-# Enhancer LoRA
+# 5. Workflow Detay Enhancer LoRA (HF Mirror)
 download \
   "https://huggingface.co/reverentelusarca/detail-enhancer-flux-klein-9b/resolve/main/klein_9b_enhancer_v2.safetensors" \
   "models/loras" "klein_9b_enhancer_v2.safetensors" \
   "Klein 9B Enhancer v2 LoRA" false || true
 
-# ── 9. İSİM EŞLEŞTİRME (symlink) ──────────────────────────────────
-step "ADIM 8/10: Workflow İsim Uyumluluğu (symlink)"
-ln -sf "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b-fp8.safetensors" \
-       "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b.safetensors" 2>/dev/null || true
-ln -sf "$COMFY_DIR/models/text_encoders/qwen_3_8b_fp8mixed.safetensors" \
-       "$COMFY_DIR/models/text_encoders/qwen_3_8b.safetensors" 2>/dev/null || true
-ln -sf "$COMFY_DIR/models/unet/flux-2-klein-9b-Q8_0.gguf" \
-       "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b-Q8_0.gguf" 2>/dev/null || true
-ok "Symlink'ler oluşturuldu (workflow isimleri uyumlu)"
-
-# ── 10. DOĞRULAMA ─────────────────────────────────────────────────
-step "ADIM 9/10: Kurulum Doğrulaması"
+# ── 9. DOĞRULAMA ──────────────────────────────────────────────────
+step "ADIM 8/9: Kurulum Doğrulaması"
 ERRORS=0
 
 verify() {
@@ -294,15 +241,17 @@ verify() {
 verify "models/diffusion_models/flux-2-klein-9b-fp8.safetensors" "Klein 9B Distilled FP8"
 verify "models/text_encoders/qwen_3_8b_fp8mixed.safetensors"     "Qwen3-8B Text Encoder"
 verify "models/vae/flux2-vae.safetensors"                        "Flux2 VAE"
+verify "models/upscale_models/4x-UltraSharpV2.pth"              "4x-UltraSharpV2 Upscaler"
+verify "models/loras/klein_9b_enhancer_v2.safetensors"          "Enhancer LoRA"
 
 if [ $ERRORS -eq 0 ]; then
-  ok "TÜM KRİTİK MODELLER DOĞRULANDI"
+  ok "TÜM MODELLER VE EKLENTİLER DOĞRULANDI"
 else
   fail "$ERRORS adet kritik model eksik!"
 fi
 
-# ── 11. BAŞLAT ────────────────────────────────────────────────────
-step "ADIM 10/10: ComfyUI Başlatılıyor"
+# ── 10. BAŞLATMA ──────────────────────────────────────────────────
+step "ADIM 9/9: ComfyUI Başlatılıyor"
 cd "$COMFY_DIR"
 tmux kill-session -t comfyui 2>/dev/null || true
 tmux new-session -d -s comfyui \
@@ -312,19 +261,7 @@ echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║  ✅ FLUX.2 KLEIN RICH KURULUM EKSİKSİZ TAMAMLANDI            ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  Tag     : $COMFY_TAG                                       ║${NC}"
-echo -e "${GREEN}║  Log     : tmux attach -t comfyui                            ║${NC}"
-echo -e "${GREEN}║  Durdur  : tmux kill-session -t comfyui                      ║${NC}"
-echo -e "${GREEN}║  Port    : 8188                                              ║${NC}"
-echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  Ana model : flux-2-klein-9b-fp8.safetensors                 ║${NC}"
-echo -e "${GREEN}║  GGUF      : flux-2-klein-9b-Q8_0.gguf                        ║${NC}"
-echo -e "${GREEN}║  TE        : qwen_3_8b_fp8mixed.safetensors                  ║${NC}"
-echo -e "${GREEN}║  VAE       : flux2-vae.safetensors                           ║${NC}"
-echo -e "${GREEN}║  Upscaler  : 4x-UltraSharp + UltraSharpV2                    ║${NC}"
-echo -e "${GREEN}║  LoRA      : klein_9b_enhancer_v2                             ║${NC}"
+echo -e "${GREEN}║  Log Takibi : tmux attach -t comfyui                         ║${NC}"
+echo -e "${GREEN}║  Port       : 8188                                           ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${CYAN}ComfyUI arka planda tmux içinde başlatıldı.${NC}"
-echo -e "${CYAN}Logları izlemek için: tmux attach -t comfyui${NC}"
 echo ""
