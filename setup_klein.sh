@@ -1,7 +1,6 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  COMFYUI + FLUX.2 KLEIN 9B — RICH SETUP (setup_klein.sh)       ║
-# ║  Son Güncelleme : 23 Ağustos 2026                               ║
 # ║  Hedef GPU      : RTX 3090 / 4090 + min 64 GB RAM               ║
 # ║  İçerik         : 9B FP8 + Qwen3-8B + VAE + GGUF Q8_0           ║
 # ║                   + Enhancer LoRA + UltraSharpV2                ║
@@ -14,10 +13,9 @@ set -euo pipefail
 COMFY_DIR="/workspace/ComfyUI"
 COMFY_TAG="v0.33.1"
 TORCH_INDEX="https://download.pytorch.org/whl/cu130"
-# Varsayılan resmi Hugging Face. Mirror sadece public modellerde isteğe bağlı kullanılabilir.
 HF_ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}"
 export HF_ENDPOINT
-export HF_HUB_ENABLE_HF_TRANSFER=1
+export HF_XET_HIGH_PERFORMANCE=1
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -33,7 +31,7 @@ info()  { echo -e "  ${CYAN}→ $1${NC}"; }
 # ── 0. HF_TOKEN ───────────────────────────────────────────────────
 step "ADIM 0/10: HF_TOKEN Kontrolü"
 if [ -z "${HF_TOKEN:-}" ]; then
-  fail "HF_TOKEN bulunamadı! Önce şunu çalıştır:\n  export HF_TOKEN=hf_xxxxxxxxxxxxxxxx"
+  fail "HF_TOKEN bulunamadı! Önce şunu çalıştırın:\n  export HF_TOKEN=hf_xxxxxxxxxxxxxxxx"
 fi
 HF_TOKEN="$(echo -n "$HF_TOKEN" | tr -d '[:space:]')"
 export HF_TOKEN
@@ -41,9 +39,9 @@ export HF_TOKEN
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${HF_TOKEN}" \
   "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-9b-fp8" || echo "000")
 if [ "$CODE" != "200" ]; then
-  fail "Token gated modele erişemiyor (HTTP $CODE).\n  https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8 adresinden Agree yapın."
+  fail "Token gated modele erişemiyor (HTTP $CODE).\n  https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8 adresinden şartları onaylayın (Agree)."
 fi
-ok "HF_TOKEN geçerli (9B FP8 erişimi OK)"
+ok "HF_TOKEN geçerli (9B FP8 erişimi onaylandı)"
 
 # ── 1. DİSK ───────────────────────────────────────────────────────
 step "ADIM 1/10: Disk Alanı Kontrolü"
@@ -86,8 +84,7 @@ source venv/bin/activate
 pip install -q --upgrade pip wheel setuptools
 pip install -q torch torchvision torchaudio --index-url "$TORCH_INDEX"
 pip install -q -r requirements.txt
-pip install -q huggingface_hub hf_transfer einops timm 2>/dev/null || true
-pip install -q -U "huggingface_hub[cli]" 2>/dev/null || true
+pip install -q huggingface_hub einops timm 2>/dev/null || true
 ok "venv + PyTorch (cu130) hazır"
 
 # ── 5. KLASÖRLER ──────────────────────────────────────────────────
@@ -149,98 +146,77 @@ download() {
   fi
 
   info "$label indiriliyor..."
+  mkdir -p "$COMFY_DIR/$dir"
 
-  # Gated modellerde her zaman resmi Hugging Face
-  local old_endpoint="${HF_ENDPOINT:-}"
-  if [ "$is_gated" = true ]; then
-    export HF_ENDPOINT="https://huggingface.co"
-  fi
+  local repo file
+  repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
+  file=$(echo "$url" | sed -n 's|https://huggingface.co/[^/]*/[^/]*/resolve/[^/]*/\(.*\)|\1|p')
+  [ -z "$file" ] && file=$(basename "${url%%\?*}")
 
-  local success=0
+  # ── 1) Python huggingface_hub API (Modern & Kesin Çözüm) ────────
+  if [ -n "$repo" ] && [ -n "$file" ]; then
+    if python3 -c "
+import sys, os, shutil
+from huggingface_hub import hf_hub_download
 
-  # ── 1) Yeni `hf` komutu (önerilen) ──────────────────────────────
-  if command -v hf >/dev/null 2>&1; then
-    local repo file
-    repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
-    file=$(basename "${url%%\?*}")
-    if [ -n "$repo" ] && [ -n "$file" ]; then
-      if hf download "$repo" "$file" \
-           --local-dir "$COMFY_DIR/$dir" \
-           --token "$HF_TOKEN"; then
-        # hf bazen dosyayı alt klasöre koyabilir
-        if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
-          mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
-        fi
-        # Bazen repo/filename şeklinde de koyuyor
-        if [ ! -f "$dest" ] && [ -f "$COMFY_DIR/$dir/$repo/$file" ]; then
-          mv -f "$COMFY_DIR/$dir/$repo/$file" "$dest" 2>/dev/null || true
-          rm -rf "$COMFY_DIR/$dir/$repo" 2>/dev/null || true
-        fi
-        if [ -f "$dest" ]; then
-          ok "$label (hf)"
-          success=1
-        fi
+repo_id = '$repo'
+filename = '$file'
+local_dir = '$COMFY_DIR/$dir'
+dest = '$dest'
+token = os.environ.get('HF_TOKEN', None)
+
+try:
+    downloaded_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        local_dir=local_dir,
+        token=token
+    )
+    if downloaded_path != dest and os.path.exists(downloaded_path):
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(downloaded_path, dest)
+    sys.exit(0)
+except Exception as e:
+    print(f'Hugging Face API Hatası: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null; then
+      if [ -f "$dest" ]; then
+        find "$COMFY_DIR/$dir" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+        ok "$label (hf_hub)"
+        return 0
       fi
     fi
   fi
 
-  # ── 2) Eski huggingface-cli (yedek) ─────────────────────────────
-  if [ $success -eq 0 ] && command -v huggingface-cli >/dev/null 2>&1; then
-    local repo file
-    repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
-    file=$(basename "${url%%\?*}")
-    if [ -n "$repo" ] && [ -n "$file" ]; then
-      if huggingface-cli download "$repo" "$file" \
-           --local-dir "$COMFY_DIR/$dir" \
-           --local-dir-use-symlinks False \
-           --token "$HF_TOKEN"; then
-        if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
-          mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
-        fi
-        if [ -f "$dest" ]; then
-          ok "$label (huggingface-cli)"
-          success=1
-        fi
+  # ── 2) aria2c (Düzeltilmiş Header Dizisi ile Yedek Yöntem) ─────
+  if command -v aria2c >/dev/null 2>&1; then
+    local -a aria_opts=(
+      -c -x 16 -s 16 -k 1M
+      --console-log-level=warn
+      --max-tries=8 --retry-wait=5 --timeout=120 --connect-timeout=30
+      -d "$COMFY_DIR/$dir" -o "$filename"
+    )
+    if [ -n "${HF_TOKEN:-}" ]; then
+      aria_opts+=(--header="Authorization: Bearer ${HF_TOKEN}")
+    fi
+
+    if aria2c "${aria_opts[@]}" "$url" 2>/dev/null; then
+      if [ -f "$dest" ]; then
+        ok "$label (aria2c)"
+        return 0
       fi
     fi
   fi
 
-  # ── 3) aria2c (son çare) ────────────────────────────────────────
-  if [ $success -eq 0 ] && command -v aria2c >/dev/null 2>&1; then
-    # ÖNEMLİ: header tırnak içinde olmalı, aksi halde "Bearer" ayrı URI sayılıyor
-    if [ "$is_gated" = true ]; then
-      if aria2c -c -x 16 -s 16 -k 1M \
-        --console-log-level=notice \
-        --max-tries=8 --retry-wait=5 --timeout=120 --connect-timeout=30 \
-        --header="Authorization: Bearer ${HF_TOKEN}" \
-        "$url" -d "$COMFY_DIR/$dir" -o "$filename"; then
-        if [ -f "$dest" ]; then
-          ok "$label (aria2c)"
-          success=1
-        fi
-      fi
-    else
-      if aria2c -c -x 16 -s 16 -k 1M \
-        --console-log-level=notice \
-        --max-tries=8 --retry-wait=5 --timeout=120 --connect-timeout=30 \
-        "$url" -d "$COMFY_DIR/$dir" -o "$filename"; then
-        if [ -f "$dest" ]; then
-          ok "$label (aria2c)"
-          success=1
-        fi
-      fi
-    fi
-  fi
-
-  # Endpoint geri al
-  export HF_ENDPOINT="$old_endpoint"
-
-  if [ $success -eq 1 ]; then
-    return 0
+  # ── 3) curl (Son Çare) ──────────────────────────────────────────
+  if [ -n "${HF_TOKEN:-}" ]; then
+    curl -s -fL -H "Authorization: Bearer ${HF_TOKEN}" -o "$dest" "$url" 2>/dev/null && ok "$label (curl)" && return 0 || true
+  else
+    curl -s -fL -o "$dest" "$url" 2>/dev/null && ok "$label (curl)" && return 0 || true
   fi
 
   if [ "$is_gated" = true ]; then
-    fail "$label indirilemedi! (gated model – token / endpoint / ağ kontrol et)"
+    fail "$label indirilemedi! (Gated model – Token yetkisini ve repo erişim onayınızı kontrol edin)"
   else
     info "⚠️  $label indirilemedi (opsiyonel)"
     return 1
@@ -285,7 +261,7 @@ download \
   "models/upscale_models" "4x-UltraSharpV2.pth" \
   "4x-UltraSharpV2" false || true
 
-# Enhancer LoRA (workflow için)
+# Enhancer LoRA
 download \
   "https://huggingface.co/reverentelusarca/detail-enhancer-flux-klein-9b/resolve/main/klein_9b_enhancer_v2.safetensors" \
   "models/loras" "klein_9b_enhancer_v2.safetensors" \
@@ -297,7 +273,6 @@ ln -sf "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b-fp8.safetensors" \
        "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b.safetensors" 2>/dev/null || true
 ln -sf "$COMFY_DIR/models/text_encoders/qwen_3_8b_fp8mixed.safetensors" \
        "$COMFY_DIR/models/text_encoders/qwen_3_8b.safetensors" 2>/dev/null || true
-# GGUF için de alternatif yol
 ln -sf "$COMFY_DIR/models/unet/flux-2-klein-9b-Q8_0.gguf" \
        "$COMFY_DIR/models/diffusion_models/flux-2-klein-9b-Q8_0.gguf" 2>/dev/null || true
 ok "Symlink'ler oluşturuldu (workflow isimleri uyumlu)"
@@ -350,6 +325,6 @@ echo -e "${GREEN}║  Upscaler  : 4x-UltraSharp + UltraSharpV2                  
 echo -e "${GREEN}║  LoRA      : klein_9b_enhancer_v2                             ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${CYAN}Reddit All-in-One workflow artık eksik model/node hatası vermemeli.${NC}"
-echo -e "${CYAN}Sadece Load Image node'una bir resim yüklemen yeterli.${NC}"
+echo -e "${CYAN}ComfyUI arka planda tmux içinde başlatıldı.${NC}"
+echo -e "${CYAN}Logları izlemek için: tmux attach -t comfyui${NC}"
 echo ""
