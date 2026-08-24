@@ -14,7 +14,8 @@ set -euo pipefail
 COMFY_DIR="/workspace/ComfyUI"
 COMFY_TAG="v0.33.1"
 TORCH_INDEX="https://download.pytorch.org/whl/cu130"
-HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+# Varsayılan resmi Hugging Face. Mirror sadece public modellerde isteğe bağlı kullanılabilir.
+HF_ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}"
 export HF_ENDPOINT
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
@@ -149,51 +150,84 @@ download() {
 
   info "$label indiriliyor..."
 
-  # 1) huggingface-cli
+  # Gated modellerde her zaman resmi Hugging Face kullan
+  local old_endpoint="${HF_ENDPOINT:-}"
+  if [ "$is_gated" = true ]; then
+    export HF_ENDPOINT="https://huggingface.co"
+  fi
+
+  local success=0
+
+  # 1) huggingface-cli (en güvenilir yöntem – Xet + gated için)
   if command -v huggingface-cli >/dev/null 2>&1; then
     local repo file
     repo=$(echo "$url" | sed -n 's|https://huggingface.co/\([^/]*/[^/]*\)/.*|\1|p')
     file=$(basename "${url%%\?*}")
     if [ -n "$repo" ] && [ -n "$file" ]; then
+      # Progress görünsün, hata da bastırılmasın
       if huggingface-cli download "$repo" "$file" \
            --local-dir "$COMFY_DIR/$dir" \
-           --token "$HF_TOKEN" >/dev/null 2>&1; then
+           --local-dir-use-symlinks False \
+           --token "$HF_TOKEN"; then
         if [ -f "$COMFY_DIR/$dir/$file" ] && [ "$file" != "$filename" ]; then
           mv -f "$COMFY_DIR/$dir/$file" "$dest" 2>/dev/null || true
         fi
         if [ -f "$dest" ]; then
           ok "$label (hf-cli)"
-          return 0
+          success=1
         fi
       fi
     fi
   fi
 
-  # 2) aria2c
-  local auth_header=""
-  if [ "$is_gated" = true ]; then
-    auth_header="--header=Authorization: Bearer ${HF_TOKEN}"
-  fi
+  # 2) aria2c (sadece hf-cli başarısız olursa)
+  if [ $success -eq 0 ]; then
+    local auth_header=""
+    if [ "$is_gated" = true ]; then
+      auth_header="--header=Authorization: Bearer ${HF_TOKEN}"
+    fi
 
-  if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
-    --max-tries=8 --retry-wait=4 --timeout=120 --connect-timeout=30 \
-    $auth_header "$url" -d "$COMFY_DIR/$dir" -o "$filename" 2>/dev/null; then
-    ok "$label"
-    return 0
-  fi
-
-  # 3) Mirror (sadece public)
-  if [ "$is_gated" = false ]; then
-    local mirror_url="${url/https:\/\/huggingface.co/$HF_ENDPOINT}"
-    if aria2c -c -x 16 -s 16 -k 1M --console-log-level=error \
-      "$mirror_url" -d "$COMFY_DIR/$dir" -o "$filename" 2>/dev/null; then
-      ok "$label (mirror)"
-      return 0
+    if command -v aria2c >/dev/null 2>&1; then
+      if aria2c -c -x 16 -s 16 -k 1M \
+        --console-log-level=notice \
+        --max-tries=8 --retry-wait=5 --timeout=120 --connect-timeout=30 \
+        $auth_header "$url" -d "$COMFY_DIR/$dir" -o "$filename"; then
+        if [ -f "$dest" ]; then
+          ok "$label (aria2c)"
+          success=1
+        fi
+      fi
     fi
   fi
 
-  info "⚠️  $label indirilemedi (opsiyonel)"
-  return 1
+  # 3) Public modeller için mirror denemesi
+  if [ $success -eq 0 ] && [ "$is_gated" = false ]; then
+    local mirror_url="${url/https:\/\/huggingface.co/$old_endpoint}"
+    if [ "$mirror_url" != "$url" ] && command -v aria2c >/dev/null 2>&1; then
+      if aria2c -c -x 16 -s 16 -k 1M --console-log-level=notice \
+        "$mirror_url" -d "$COMFY_DIR/$dir" -o "$filename"; then
+        if [ -f "$dest" ]; then
+          ok "$label (mirror)"
+          success=1
+        fi
+      fi
+    fi
+  fi
+
+  # Endpoint’i eski haline getir
+  export HF_ENDPOINT="$old_endpoint"
+
+  if [ $success -eq 1 ]; then
+    return 0
+  fi
+
+  # Kritik model ise scripti durdur, değilse uyarı ver
+  if [ "$is_gated" = true ]; then
+    fail "$label indirilemedi! (gated model – token ve endpoint kontrol et)"
+  else
+    info "⚠️  $label indirilemedi (opsiyonel)"
+    return 1
+  fi
 }
 
 # ── 8. MODEL İNDİRMELERİ ──────────────────────────────────────────
