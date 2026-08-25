@@ -48,7 +48,7 @@ ok "Disk alanı yeterli: ${AVAIL:-?}GB"
 step "ADIM 1/10: Sistem + Python Bağımlılıkları (PuLID/ReActor/SAM için)"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
+    unzip libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
     > /dev/null 2>&1 || true
 
 # Kritik pip paketleri (çakışmayı minimize etmek için sırayla)
