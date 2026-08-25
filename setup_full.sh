@@ -1,8 +1,6 @@
 #!/bin/bash
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  COMFYUI + FLUX.1 DEV FP8 — STABLE SETUP (setup_full.sh)       ║
-# ║  Son Güncelleme : 18 Ağustos 2026                               ║
-# ║  Hedef          : 2-3 ay boyunca tutarlı kurulum                ║
 # ║  Tested for     : Clore.ai / RTX 3090-4090 / 64GB+ RAM          ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
@@ -12,7 +10,7 @@ set -euo pipefail
 COMFY_DIR="/workspace/ComfyUI"
 COMFY_TAG="v0.33.1"                          # pinlenmiş stabil sürüm
 TORCH_INDEX="https://download.pytorch.org/whl/cu130"
-HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"  # yavaş bölgeler için
+HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"  # hızlı indirme mirror'ı
 export HF_ENDPOINT
 export HF_HUB_ENABLE_HF_TRANSFER=1
 
@@ -149,7 +147,6 @@ download() {
     fi
 
     info "$DESC indiriliyor..."
-    # Önce mirror dene, sonra orijinal
     local MIRROR_URL="${URL/https:\/\/huggingface.co/https:\/\/hf-mirror.com}"
     
     if aria2c -c -x 16 -s 16 -k 1M \
@@ -174,13 +171,12 @@ download() {
     fi
 }
 
-# A. Flux.1 Dev FP8 (Kijai)
+# A. Base Model & Encoders & VAE
 download \
     "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors" \
     "models/diffusion_models" "flux1-dev-fp8.safetensors" \
     "Flux.1 Dev FP8 (~11.9 GB)"
 
-# B. Text Encoders
 download \
     "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors" \
     "models/text_encoders" "clip_l.safetensors" \
@@ -191,92 +187,92 @@ download \
     "models/text_encoders" "t5xxl_fp8_e4m3fn.safetensors" \
     "T5-XXL FP8"
 
-# C. VAE (public mirror)
 download \
     "https://huggingface.co/camenduru/FLUX.1-dev/resolve/main/ae.safetensors" \
     "models/vae" "ae.safetensors" \
     "Flux VAE"
 
-# D. ControlNet Union Pro
 download \
     "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro/resolve/main/diffusion_pytorch_model.safetensors" \
     "models/controlnet" "flux-dev-controlnet-union-pro.safetensors" \
     "ControlNet Union Pro"
 
+# ── LORA PAKETİ ───────────────────────────────────────────────────
 
-    # --- LORA PAKETİ (FULL) ---
+# 1. STANDART COMFYUI LORA'LARI (Native KSampler / Load LoRA ile uyumlu)
+download \
+    "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/realism_lora_comfy_converted.safetensors" \
+    "models/loras" "flux_realism.safetensors" \
+    "Realism LoRA (Standart ComfyUI)"
 
-    # E. Realism LoRA
+download \
+    "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/anime_lora_comfy_converted.safetensors" \
+    "models/loras" "flux_anime.safetensors" \
+    "Anime LoRA (Standart ComfyUI)"
+
+download \
+    "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/art_lora_comfy_converted.safetensors" \
+    "models/loras" "flux_art.safetensors" \
+    "Art LoRA (Standart ComfyUI)"
+
+download \
+    "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/mjv6_lora_comfy_converted.safetensors" \
+    "models/loras" "flux_mjv6.safetensors" \
+    "Midjourney v6 LoRA (Standart ComfyUI)"
+
+download \
+    "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/scenery_lora_comfy_converted.safetensors" \
+    "models/loras" "flux_scenery.safetensors" \
+    "Scenery LoRA (Standart ComfyUI)"
+
+download \
+    "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-add-details/resolve/main/FLUX-dev-lora-add_details.safetensors" \
+    "models/loras" "flux_add_details.safetensors" \
+    "Add Details LoRA (Shakker - Standart)"
+
+download \
+    "https://huggingface.co/alimama-creative/FLUX.1-Turbo-Alpha/resolve/main/diffusion_pytorch_model.safetensors" \
+    "models/loras" "flux_turbo_alpha.safetensors" \
+    "Flux Turbo Alpha (8-step - Standart)"
+
+# 2. ALTERNATİF / RAW LORA'LAR (Sadece XLabs Custom Node'ları ile uyumlu)
 download \
     "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
-    "models/loras" "flux_realism.safetensors" \
-    "Realism LoRA"
-    
-download \
-  "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/lora.safetensors" \
-  "models/loras" "flux_realism.safetensors" \
-  "Realism LoRA (XLabs)"
+    "models/loras" "flux_realism_for_xlabs_node.safetensors" \
+    "Realism LoRA (Yalnızca XLabs Node Uyumlu)"
 
-download \
-  "https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-add-details/resolve/main/FLUX-dev-lora-add_details.safetensors" \
-  "models/loras" "flux_add_details.safetensors" \
-  "Add Details LoRA (Shakker)"
-
-download \
-  "https://huggingface.co/alimama-creative/FLUX.1-Turbo-Alpha/resolve/main/diffusion_pytorch_model.safetensors" \
-  "models/loras" "flux_turbo_alpha.safetensors" \
-  "Flux Turbo Alpha (8-step)"
-
-download \
-  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/anime_lora.safetensors" \
-  "models/loras" "flux_anime.safetensors" \
-  "Anime LoRA (XLabs)" \
-  || true
-
-download \
-  "https://huggingface.co/XLabs-AI/flux-lora-collection/resolve/main/scenery_lora.safetensors" \
-  "models/loras" "flux_scenery.safetensors" \
-  "Scenery LoRA (XLabs)" \
-  || true
-
-# F. 4x-UltraSharp
+# Upscale & IP-Adapter
 download \
     "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth" \
     "models/upscale_models" "4x-UltraSharp.pth" \
     "4x-UltraSharp"
 
-# G. CLIP Vision (IP-Adapter)
 download \
     "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors" \
     "models/clip_vision" "sigclip_vision_patch14_384.safetensors" \
     "SigCLIP Vision"
 
-# H. IP-Adapter
 download \
     "https://huggingface.co/XLabs-AI/flux-ip-adapter/resolve/main/ip_adapter.safetensors" \
     "models/xlabs/ipadapters" "ip_adapter.safetensors" \
     "XLabs IP-Adapter"
 
-# I. CLIP ViT-L/14 (XLabs Flux IP-Adapter için zorunlu)
 download \
     "https://huggingface.co/openai/clip-vit-large-patch14/resolve/main/model.safetensors" \
     "models/clip_vision" "clip-vit-large-patch14.safetensors" \
-    "CLIP ViT-L/14 (XLabs IP-Adapter)"
+    "CLIP ViT-L/14"
 
 # ── 6. UYUMLULUK SYMLINK'LERİ ─────────────────────────────────────
 step "ADIM 6/7: Uyumluluk Symlink'leri"
 
-# diffusion_models ↔ unet
 ln -sf "$COMFY_DIR/models/diffusion_models/flux1-dev-fp8.safetensors" \
        "$COMFY_DIR/models/unet/flux1-dev-fp8.safetensors" 2>/dev/null || true
 
-# text_encoders ↔ clip
 ln -sf "$COMFY_DIR/models/text_encoders/clip_l.safetensors" \
        "$COMFY_DIR/models/clip/clip_l.safetensors" 2>/dev/null || true
 ln -sf "$COMFY_DIR/models/text_encoders/t5xxl_fp8_e4m3fn.safetensors" \
        "$COMFY_DIR/models/clip/t5xxl_fp8_e4m3fn.safetensors" 2>/dev/null || true
 
-# IP-Adapter her iki yere de
 ln -sf "$COMFY_DIR/models/xlabs/ipadapters/ip_adapter.safetensors" \
        "$COMFY_DIR/models/ipadapter/ip_adapter.safetensors" 2>/dev/null || true
 
@@ -303,15 +299,13 @@ verify "models/diffusion_models/flux1-dev-fp8.safetensors" "Flux Dev FP8"
 verify "models/text_encoders/clip_l.safetensors"             "CLIP-L"
 verify "models/text_encoders/t5xxl_fp8_e4m3fn.safetensors"  "T5-XXL FP8"
 verify "models/vae/ae.safetensors"                         "VAE"
-verify "models/controlnet/flux-dev-controlnet-union-pro.safetensors" "ControlNet Union Pro"
-verify "models/loras/flux_realism.safetensors"              "Realism LoRA"
-verify "models/upscale_models/4x-UltraSharp.pth"            "4x-UltraSharp"
-verify "models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP Vision"
-verify "models/xlabs/ipadapters/ip_adapter.safetensors"     "IP-Adapter"
+verify "models/loras/flux_realism.safetensors"              "Realism LoRA (Standart)"
+verify "models/loras/flux_realism_for_xlabs_node.safetensors" "Realism LoRA (XLabs Node)"
+verify "models/loras/flux_anime.safetensors"                "Anime LoRA (Standart)"
 
 echo ""
 if [ $ERRORS -eq 0 ]; then
-    ok "TÜM KRİTİK MODELLER DOĞRULANDI — SIFIR HATA!"
+    ok "TÜM MODELLER VE LORA'LAR DOĞRULANDI — SIFIR HATA!"
 else
     fail "$ERRORS adet model eksik! Kurulumu kontrol et."
 fi
@@ -320,22 +314,14 @@ fi
 cd "$COMFY_DIR"
 tmux kill-session -t comfyui 2>/dev/null || true
 
-# venv içinden başlat
 tmux new-session -d -s comfyui \
     "cd $COMFY_DIR && source venv/bin/activate && python main.py --listen 0.0.0.0 --port 8188 --highvram"
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║  ✅ KURULUM TAMAMLANDI                                       ║${NC}"
+echo -e "${GREEN}║  ✅ KURULUM VE MODEL ADLANDIRMALARI TAMAMLANDI              ║${NC}"
 echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  ComfyUI Tag : $COMFY_TAG                                   ║${NC}"
-echo -e "${GREEN}║  Log         : tmux attach -t comfyui                        ║${NC}"
-echo -e "${GREEN}║  Çıkış       : Ctrl+B sonra D                                ║${NC}"
-echo -e "${GREEN}║  Durdur      : tmux kill-session -t comfyui                  ║${NC}"
-echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║  Port        : 8188                                          ║${NC}"
+echo -e "${GREEN}║  Standart Düğüm : flux_realism, flux_anime, flux_art ...    ║${NC}"
+echo -e "${GREEN}║  Özel Düğüm     : flux_realism_for_xlabs_node               ║${NC}"
+echo -e "${GREEN}║  Port           : 8188                                       ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${CYAN}Not: Yavaş bölgelerde daha hızlı indirme için script çalıştırmadan önce:${NC}"
-echo -e "${CYAN}  export HF_ENDPOINT=https://hf-mirror.com${NC}"
-echo ""
