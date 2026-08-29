@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared installer library for MucahitBilgin35/comfyui-workflows
-# Updated: 2026-08-29 — stable v2.1 preload/snapshot-safe
+# Updated: 2026-08-29 — stable v2.2 preservation + compatibility
 # Target: Clore.ai Ubuntu, RTX 3090/4090, 64 GB+ system RAM
 
 set -Eeuo pipefail
@@ -141,7 +141,12 @@ install_base_nodes() {
   clone_node "ComfyUI_essentials" "https://github.com/cubiq/ComfyUI_essentials.git"
   clone_node "x-flux-comfyui" "https://github.com/XLabs-AI/x-flux-comfyui.git"
 
-  # Learning / diagnostics helpers. These do not replace native nodes.
+  # PRESERVED from the user's original FULL/WEEKEND setup.
+  # Do not remove original tools silently: compatibility with saved workflows matters.
+  clone_node "ComfyUI-Pixaroma" "https://github.com/pixaroma/ComfyUI-Pixaroma.git"
+  clone_node "ComfyUI_IPAdapter_plus" "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git"
+
+  # Learning / diagnostics helpers added in v2.
   clone_node "ComfyUI-Lora-Manager" "https://github.com/willmiao/ComfyUI-Lora-Manager.git"
   clone_node "ComfyUI-Crystools" "https://github.com/crystian/ComfyUI-Crystools.git"
 }
@@ -156,12 +161,21 @@ install_advanced_nodes() {
   clone_node "ComfyUI-IC-Light" "https://github.com/kijai/ComfyUI-IC-Light.git"
   clone_node "ComfyUI-SeedVR2_VideoUpscaler" "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler.git"
 
-  # These old packages are deliberately not installed by default:
-  # - WAS Node Suite: archived in 2025.
-  # - ComfyUI_IPAdapter_plus: maintenance-only since 2025; FLUX path here is x-flux.
-  # - ComfyUI-SUPIR wrapper: SUPIR is now in ComfyUI core.
-  if [[ "${INSTALL_LEGACY_IPADAPTER_PLUS:-0}" == "1" ]]; then
-    clone_node "ComfyUI_IPAdapter_plus" "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git"
+}
+
+install_legacy_compat_nodes() {
+  # WAS existed in the user's original WEEKEND setup, but it is archived and has
+  # documented incompatibilities with newer ComfyUI frontends. Keep it available
+  # without silently forcing it into a stable environment.
+  if [[ "${INSTALL_WAS_NODE_SUITE:-0}" == "1" ]]; then
+    clone_node "was-node-suite-comfyui" "https://github.com/WASasquatch/was-node-suite-comfyui.git"
+  fi
+
+  # The old SUPIR wrapper existed in the user's original EXTRAS setup.
+  # Current ComfyUI has core SUPIR support and upstream marks this wrapper maintenance-only.
+  # Also note SUPIR's non-commercial restriction. Opt in explicitly if old workflows need it.
+  if [[ "${INSTALL_SUPIR_LEGACY:-0}" == "1" ]]; then
+    clone_node "ComfyUI-SUPIR" "https://github.com/kijai/ComfyUI-SUPIR.git"
   fi
 }
 
@@ -296,9 +310,63 @@ install_lora_models() {
   hf_file "XLabs-AI/flux-lora-collection" "mjv6_lora_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_mjv6_comfy_converted.safetensors" "MJv6 LoRA (Comfy converted)"
   hf_file "XLabs-AI/flux-lora-collection" "scenery_lora_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_scenery_comfy_converted.safetensors" "Scenery LoRA (Comfy converted)"
   hf_file "Shakker-Labs/FLUX.1-dev-LoRA-add-details" "FLUX-dev-lora-add_details.safetensors" "$COMFY_DIR/models/loras/flux_add_details.safetensors" "Add Details LoRA"
+  # PRESERVED from original FULL/WEEKEND setup.
+  hf_file "alimama-creative/FLUX.1-Turbo-Alpha" "diffusion_pytorch_model.safetensors" "$COMFY_DIR/models/loras/flux_turbo_alpha.safetensors" "FLUX Turbo Alpha"
   hf_file "alvdansen/flux_film_foto" "araminta_k_flux_film_foto.safetensors" "$COMFY_DIR/models/loras/flux_film_foto.safetensors" "Film Foto LoRA"
   hf_file "strangerzonehf/Flux-Super-Realism-LoRA" "super-realism.safetensors" "$COMFY_DIR/models/loras/flux_super_realism.safetensors" "Super Realism LoRA"
   hf_file "XLabs-AI/flux-RealismLora" "lora.safetensors" "$COMFY_DIR/models/xlabs/loras/flux_realism_xlabs_raw.safetensors" "Realism LoRA (XLabs raw)"
+}
+
+install_xlabs_raw_style_loras() {
+  # PRESERVED from the user's original WEEKEND setup. The old script stored these
+  # under the same filenames as converted LoRAs, causing collisions. v2.2 keeps both.
+  hf_file "XLabs-AI/flux-lora-collection" "anime_lora.safetensors" "$COMFY_DIR/models/xlabs/loras/flux_anime_xlabs_raw.safetensors" "Anime LoRA (XLabs raw)"
+  hf_file "XLabs-AI/flux-lora-collection" "art_lora.safetensors" "$COMFY_DIR/models/xlabs/loras/flux_art_xlabs_raw.safetensors" "Art LoRA (XLabs raw)"
+  hf_file "XLabs-AI/flux-lora-collection" "mjv6_lora.safetensors" "$COMFY_DIR/models/xlabs/loras/flux_mjv6_xlabs_raw.safetensors" "MJv6 LoRA (XLabs raw)"
+  hf_file "XLabs-AI/flux-lora-collection" "scenery_lora.safetensors" "$COMFY_DIR/models/xlabs/loras/flux_scenery_xlabs_raw.safetensors" "Scenery LoRA (XLabs raw)"
+}
+
+install_full_utility_models() {
+  # These were part of the user's original FULL package and therefore remain in FULL.
+  hf_file "Comfy-Org/sigclip_vision_384" "sigclip_vision_patch14_384.safetensors" "$COMFY_DIR/models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP Vision"
+  hf_file "lokCX/4x-Ultrasharp" "4x-UltraSharp.pth" "$COMFY_DIR/models/upscale_models/4x-UltraSharp.pth" "4x-UltraSharp"
+}
+
+create_legacy_compat_symlinks() {
+  # Preserve old workflow filenames while keeping collision-free canonical storage.
+  mkdir -p "$COMFY_DIR/models"/{loras,controlnet,diffusion_models,vae,ipadapter,xlabs/ipadapters,unet}
+
+  [[ -s "$COMFY_DIR/models/loras/flux_realism_comfy_converted.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/loras/flux_realism_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_realism.safetensors"
+  [[ -s "$COMFY_DIR/models/loras/flux_anime_comfy_converted.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/loras/flux_anime_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_anime.safetensors"
+  [[ -s "$COMFY_DIR/models/loras/flux_art_comfy_converted.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/loras/flux_art_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_art.safetensors"
+  [[ -s "$COMFY_DIR/models/loras/flux_mjv6_comfy_converted.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/loras/flux_mjv6_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_mjv6.safetensors"
+  [[ -s "$COMFY_DIR/models/loras/flux_scenery_comfy_converted.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/loras/flux_scenery_comfy_converted.safetensors" "$COMFY_DIR/models/loras/flux_scenery.safetensors"
+  [[ -s "$COMFY_DIR/models/xlabs/loras/flux_realism_xlabs_raw.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/xlabs/loras/flux_realism_xlabs_raw.safetensors" "$COMFY_DIR/models/loras/flux_realism_for_xlabs_node.safetensors"
+
+  [[ -s "$COMFY_DIR/models/xlabs/ipadapters/flux-ip-adapter.safetensors" ]] && {
+    ln -sfn "$COMFY_DIR/models/xlabs/ipadapters/flux-ip-adapter.safetensors" "$COMFY_DIR/models/xlabs/ipadapters/ip_adapter.safetensors"
+    ln -sfn "$COMFY_DIR/models/xlabs/ipadapters/flux-ip-adapter.safetensors" "$COMFY_DIR/models/ipadapter/ip_adapter.safetensors"
+  }
+
+  local kind src
+  for kind in depth canny hed; do
+    src="$COMFY_DIR/models/xlabs/controlnets/flux-${kind}-controlnet-v3.safetensors"
+    [[ -s "$src" ]] && ln -sfn "$src" "$COMFY_DIR/models/controlnet/flux-${kind}-controlnet-v3.safetensors"
+  done
+
+  [[ -s "$COMFY_DIR/models/SEEDVR2/seedvr2_ema_3b_fp8_e4m3fn.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/SEEDVR2/seedvr2_ema_3b_fp8_e4m3fn.safetensors" "$COMFY_DIR/models/diffusion_models/seedvr2_ema_3b_fp8_e4m3fn.safetensors"
+  [[ -s "$COMFY_DIR/models/SEEDVR2/ema_vae_fp16.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/SEEDVR2/ema_vae_fp16.safetensors" "$COMFY_DIR/models/vae/seedvr2_ema_vae_fp16.safetensors"
+
+  [[ -s "$COMFY_DIR/models/unet/IC-Light/iclight_sd15_fc.safetensors" ]] &&
+    ln -sfn "$COMFY_DIR/models/unet/IC-Light/iclight_sd15_fc.safetensors" "$COMFY_DIR/models/unet/iclight_sd15_fc.safetensors"
 }
 
 install_control_models() {
@@ -330,8 +398,7 @@ install_rich_models() {
   hf_file "comfyanonymous/flux_text_encoders" "t5xxl_fp16.safetensors" "$COMFY_DIR/models/text_encoders/t5xxl_fp16.safetensors" "T5-XXL FP16"
   ln -sfn "$COMFY_DIR/models/text_encoders/t5xxl_fp16.safetensors" "$COMFY_DIR/models/clip/t5xxl_fp16.safetensors"
   hf_file "Comfy-Org/Flux1-Redux-Dev" "flux1-redux-dev.safetensors" "$COMFY_DIR/models/style_models/flux1-redux-dev.safetensors" "FLUX Redux"
-  hf_file "Comfy-Org/sigclip_vision_384" "sigclip_vision_patch14_384.safetensors" "$COMFY_DIR/models/clip_vision/sigclip_vision_patch14_384.safetensors" "SigCLIP Vision"
-  hf_file "lokCX/4x-Ultrasharp" "4x-UltraSharp.pth" "$COMFY_DIR/models/upscale_models/4x-UltraSharp.pth" "4x-UltraSharp"
+  install_full_utility_models
   hf_file "uwg/upscaler" "ESRGAN/4x_NMKD-Siax_200k.pth" "$COMFY_DIR/models/upscale_models/4x_NMKD-Siax_200k.pth" "4x NMKD-Siax"
   hf_file "numz/SeedVR2_comfyUI" "seedvr2_ema_3b_fp8_e4m3fn.safetensors" "$COMFY_DIR/models/SEEDVR2/seedvr2_ema_3b_fp8_e4m3fn.safetensors" "SeedVR2 3B FP8"
   hf_file "numz/SeedVR2_comfyUI" "ema_vae_fp16.safetensors" "$COMFY_DIR/models/SEEDVR2/ema_vae_fp16.safetensors" "SeedVR2 VAE FP16"
@@ -352,6 +419,13 @@ install_editing_models() {
     hf_file "Comfy-Org/flux1-dev" "split_files/diffusion_models/flux1-fill-dev.safetensors" "$COMFY_DIR/models/diffusion_models/flux1-fill-dev.safetensors" "FLUX.1 Fill Dev"
   else
     warn "FLUX.1 Fill Dev skipped (set ACCEPT_FLUX_DEV_LICENSE=1 after accepting its license)"
+  fi
+}
+
+install_legacy_compat_models() {
+  if [[ "${INSTALL_SUPIR_LEGACY:-0}" == "1" ]]; then
+    hf_file "Kijai/SUPIR_pruned" "SUPIR-v0Q_fp16.safetensors" "$COMFY_DIR/models/checkpoints/SUPIR-v0Q_fp16.safetensors" "SUPIR v0Q FP16 (legacy compatibility)"
+    hf_file "Kijai/SUPIR_pruned" "SUPIR-v0F_fp16.safetensors" "$COMFY_DIR/models/checkpoints/SUPIR-v0F_fp16.safetensors" "SUPIR v0F FP16 (legacy compatibility)"
   fi
 }
 
@@ -423,14 +497,20 @@ preload_profile() {
 
   case "$profile" in
     weekend)
+      install_xlabs_raw_style_loras
       install_rich_models
       install_editing_models
+      install_legacy_compat_models
+      create_legacy_compat_symlinks
       ;;
     extras)
       # From FULL, this downloads both the Weekend delta and Extras-only heavy models.
+      install_xlabs_raw_style_loras
       install_rich_models
       install_editing_models
       install_optional_extra_models
+      install_legacy_compat_models
+      create_legacy_compat_symlinks
       ;;
     *) die "Unknown preload profile: $profile" ;;
   esac
@@ -466,38 +546,54 @@ run_profile() {
       install_lora_models
       install_control_models
       install_identity_models
+      install_full_utility_models
+      create_legacy_compat_symlinks
       ;;
     weekend)
       install_base_nodes
       install_advanced_nodes
+      install_legacy_compat_nodes
       install_node_requirements
       install_core_models
       install_lora_models
+      install_xlabs_raw_style_loras
       install_control_models
       install_identity_models
+      install_full_utility_models
       install_rich_models
       install_editing_models
+      install_legacy_compat_models
+      create_legacy_compat_symlinks
       ;;
     extras)
       # FULL -> advanced + optional extras in one activation pass.
       install_advanced_nodes
       install_optional_extra_nodes
+      install_legacy_compat_nodes
       install_node_requirements
       install_identity_models
+      install_full_utility_models
       install_rich_models
       install_editing_models
       install_optional_extra_models
+      install_legacy_compat_models
+      create_legacy_compat_symlinks
       ;;
     everything)
       install_base_nodes
       install_advanced_nodes
+      install_legacy_compat_nodes
       install_node_requirements
       install_core_models
       install_lora_models
+      install_xlabs_raw_style_loras
       install_control_models
       install_identity_models
+      install_full_utility_models
       install_rich_models
       install_editing_models
+      install_legacy_compat_models
+      create_legacy_compat_symlinks
       ;;
     *) die "Unknown profile: $profile" ;;
   esac
