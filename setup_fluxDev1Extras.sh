@@ -11,5 +11,5 @@ if [[ ! -f "$COMMON" ]]; then
   curl -fL --retry 5 --retry-delay 2 "$RAW_BASE/_comfy_common.sh" -o "$COMMON"
 fi
 source "$COMMON"
-[[ -x "${COMFY_DIR:-/workspace/ComfyUI}/venv/bin/python" ]] || die "Base ComfyUI missing. Run setup_everything.sh first."
+[[ -x "${COMFY_DIR:-/workspace/ComfyUI}/venv/bin/python" ]] || die "Base ComfyUI missing. Restore FULL snapshot or run setup_full.sh first."
 run_profile extras

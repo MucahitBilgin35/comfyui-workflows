@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared installer library for MucahitBilgin35/comfyui-workflows
-# Updated: 2026-08-29
+# Updated: 2026-08-29 — stable v2.1 preload/snapshot-safe
 # Target: Clore.ai Ubuntu, RTX 3090/4090, 64 GB+ system RAM
 
 set -Eeuo pipefail
@@ -11,6 +11,8 @@ TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}"
 HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 PIP_CACHE_DIR="${PIP_CACHE_DIR:-/workspace/.cache/pip}"
 SETUP_WARNINGS="${SETUP_WARNINGS:-/workspace/comfy_setup_warnings.log}"
+TRANSFER_VENV="${TRANSFER_VENV:-/workspace/.comfy-transfer-venv}"
+HF_CLI="${HF_CLI:-$TRANSFER_VENV/bin/hf}"
 export HF_HOME PIP_CACHE_DIR
 export HF_HUB_DOWNLOAD_TIMEOUT="${HF_HUB_DOWNLOAD_TIMEOUT:-300}"
 export HF_HUB_ETAG_TIMEOUT="${HF_HUB_ETAG_TIMEOUT:-30}"
@@ -36,8 +38,27 @@ ok(){ printf '\033[0;32m[OK]\033[0m %s\n' "$*"; }
 warn(){ printf '\033[1;33m[WARN]\033[0m %s\n' "$*"; printf '[WARN] %s\n' "$*" >> "$SETUP_WARNINGS"; }
 die(){ printf '\033[0;31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
 
+prepare_transfer_tools() {
+  log "Fast transfer tools (isolated from ComfyUI venv)"
+  mkdir -p /workspace "$HF_HOME" "$PIP_CACHE_DIR"
+  if ! command -v aria2c >/dev/null 2>&1 || ! command -v zstd >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 || [[ ! -x "$HF_CLI" ]]; then
+    apt-get -o Acquire::Retries=3 update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+      curl wget ca-certificates aria2 zstd unzip tmux python3 python3-venv python3-pip \
+      >/dev/null
+  fi
+
+  if [[ ! -x "$HF_CLI" || "${UPDATE_TRANSFER_TOOLS:-0}" == "1" ]]; then
+    [[ -d "$TRANSFER_VENV" ]] || python3 -m venv "$TRANSFER_VENV"
+    "$TRANSFER_VENV/bin/python" -m pip install -q --upgrade pip wheel setuptools
+    "$TRANSFER_VENV/bin/python" -m pip install -q --upgrade "huggingface_hub[hf_xet]>=1,<2"
+  fi
+  [[ -x "$HF_CLI" ]] || die "Hugging Face CLI could not be prepared at $HF_CLI"
+  ok "Transfer tools ready | Xet HP=${HF_XET_HIGH_PERFORMANCE}"
+}
+
 prepare_system() {
-  log "System packages + fast-transfer tools"
+  log "System packages"
   mkdir -p /workspace "$HF_HOME" "$PIP_CACHE_DIR"
   : > "$SETUP_WARNINGS"
   apt-get -o Acquire::Retries=3 update -qq
@@ -46,7 +67,25 @@ prepare_system() {
     python3 python3-venv python3-pip libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     >/dev/null
   git lfs install --skip-repo >/dev/null 2>&1 || true
-  ok "System ready | RAM ${MEM_GB} GB | HF_XET_HIGH_PERFORMANCE=${HF_XET_HIGH_PERFORMANCE}"
+  prepare_transfer_tools
+  ok "System ready | RAM ${MEM_GB} GB"
+}
+
+comfy_base_ready() {
+  [[ -f "$COMFY_DIR/main.py" && -x "$COMFY_DIR/venv/bin/python" ]]
+}
+
+ensure_model_dirs() {
+  mkdir -p "$COMFY_DIR/models"/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,pulid,insightface/models/antelopev2,style_models,ultralytics/bbox,ultralytics/segm,sam2,SEEDVR2,facerestore_models,checkpoints,xlabs/ipadapters,xlabs/loras,xlabs/controlnets}
+}
+
+ensure_comfy_base() {
+  if comfy_base_ready && [[ "${FORCE_BASE_REFRESH:-0}" != "1" ]]; then
+    ensure_model_dirs
+    ok "Existing ComfyUI base detected; preserving snapshot/install (FORCE_BASE_REFRESH=1 to rebuild)"
+    return 0
+  fi
+  install_comfyui
 }
 
 install_comfyui() {
@@ -69,8 +108,8 @@ install_comfyui() {
   # Current ComfyUI NVIDIA guidance uses stable PyTorch with CUDA 13.0.
   python -m pip install torch torchvision torchaudio --extra-index-url "$TORCH_INDEX"
   python -m pip install -r requirements.txt
-  python -m pip install -U "huggingface_hub[hf_xet]>=1,<2"
-  mkdir -p models/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,pulid,insightface/models/antelopev2,style_models,ultralytics/bbox,ultralytics/segm,sam2,SEEDVR2,facerestore_models,checkpoints,xlabs/ipadapters,xlabs/loras,xlabs/controlnets}
+  # Download tooling is isolated in TRANSFER_VENV; ComfyUI's own venv stays cleaner.
+  ensure_model_dirs
   ok "ComfyUI ready @ $(git -C "$COMFY_DIR" rev-parse --short HEAD)"
 }
 
@@ -79,7 +118,12 @@ clone_node() {
   local dst="$COMFY_DIR/custom_nodes/$name"
   mkdir -p "$COMFY_DIR/custom_nodes"
   if [[ -d "$dst/.git" ]]; then
-    ok "$name already present"
+    if [[ "${UPDATE_NODES:-0}" == "1" ]]; then
+      log "Updating node: $name"
+      git -C "$dst" pull --ff-only || warn "$name update failed; keeping existing checkout"
+    else
+      ok "$name already present (kept pinned)"
+    fi
     return 0
   fi
   log "Node: $name"
@@ -129,35 +173,58 @@ install_optional_extra_nodes() {
 }
 
 install_node_requirements() {
-  log "Custom-node dependencies"
+  log "Custom-node dependencies (only new/changed nodes)"
   source "$COMFY_DIR/venv/bin/activate"
 
-  # Florence2 currently has open compatibility issues with Transformers 5.x.
-  # Keep this optional extras stack on a tested 4.x range instead of blindly upgrading.
+  local node req commit marker success
+  for node in "$COMFY_DIR"/custom_nodes/*; do
+    [[ -d "$node" ]] || continue
+    req="$node/requirements.txt"
+    [[ -f "$req" ]] || continue
+    commit="$(git -C "$node" rev-parse HEAD 2>/dev/null || printf 'nogit')"
+    marker="$node/.comfy_requirements_${commit}"
+    if [[ -f "$marker" ]]; then
+      ok "$(basename "$node") requirements already satisfied for ${commit:0:8}"
+      continue
+    fi
+    echo "Installing $(basename "$node") requirements"
+    success=1
+    if ! python -m pip install --prefer-binary -r "$req"; then
+      warn "Dependency install failed: $req"
+      success=0
+    fi
+    (( success == 1 )) && touch "$marker"
+  done
+
   if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI-Florence2" || -d "$COMFY_DIR/custom_nodes/ComfyUI-RMBG" ]]; then
     python -m pip install --prefer-binary "transformers>=4.50.3,<5" || warn "Transformers compatibility pin failed"
   fi
 
-  local req
-  for req in "$COMFY_DIR"/custom_nodes/*/requirements.txt; do
-    [[ -f "$req" ]] || continue
-    echo "Installing $(basename "$(dirname "$req")") requirements"
-    if ! python -m pip install --prefer-binary -r "$req"; then
-      warn "Dependency install failed: $req (setup continues; inspect validation/log)"
-    fi
-  done
   if [[ -f "$COMFY_DIR/custom_nodes/x-flux-comfyui/setup.py" ]]; then
-    if ! (cd "$COMFY_DIR/custom_nodes/x-flux-comfyui" && python setup.py); then
-      warn "x-flux setup.py failed"
+    commit="$(git -C "$COMFY_DIR/custom_nodes/x-flux-comfyui" rev-parse HEAD 2>/dev/null || printf 'nogit')"
+    marker="$COMFY_DIR/custom_nodes/x-flux-comfyui/.comfy_setup_${commit}"
+    if [[ ! -f "$marker" ]]; then
+      if (cd "$COMFY_DIR/custom_nodes/x-flux-comfyui" && python setup.py); then
+        touch "$marker"
+      else
+        warn "x-flux setup.py failed"
+      fi
+    else
+      ok "x-flux setup.py already completed for ${commit:0:8}"
     fi
-  fi
-  if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI_PuLID_Flux_ll" ]]; then
-    python -m pip install --prefer-binary --no-deps facenet-pytorch || warn "facenet-pytorch helper failed"
   fi
 
-  if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI-Florence2" || -d "$COMFY_DIR/custom_nodes/ComfyUI-RMBG" ]]; then
-    python -m pip install --prefer-binary "transformers>=4.50.3,<5" || warn "Final Transformers compatibility pin failed"
+  if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI_PuLID_Flux_ll" ]]; then
+    marker="$COMFY_DIR/custom_nodes/ComfyUI_PuLID_Flux_ll/.comfy_facenet_helper"
+    if [[ ! -f "$marker" ]]; then
+      if python -m pip install --prefer-binary --no-deps facenet-pytorch; then
+        touch "$marker"
+      else
+        warn "facenet-pytorch helper failed"
+      fi
+    fi
   fi
+
   python -m pip check || warn "pip check found dependency conflicts; inspect before making a Golden snapshot"
 }
 
@@ -165,6 +232,7 @@ hf_file() {
   local repo="$1" remote="$2" target="$3" desc="$4"
   mkdir -p "$(dirname "$target")"
   if [[ -s "$target" ]]; then ok "$desc already present"; return 0; fi
+  [[ -x "$HF_CLI" ]] || prepare_transfer_tools
 
   log "$desc"
   local stage="/workspace/.hf_stage_${RANDOM}_${RANDOM}"
@@ -172,7 +240,7 @@ hf_file() {
   local args=(download "$repo" "$remote" --local-dir "$stage")
   [[ -n "${HF_TOKEN:-}" ]] && args+=(--token "$HF_TOKEN")
 
-  if hf "${args[@]}"; then
+  if "$HF_CLI" "${args[@]}"; then
     if [[ -s "$stage/$remote" ]]; then
       mv "$stage/$remote" "$target"
       rm -rf "$stage"
@@ -181,13 +249,16 @@ hf_file() {
     fi
   fi
 
-  warn "hf_xet path failed for $desc; trying aria2 direct fallback"
+  warn "hf_xet path failed for $desc; trying aria2 fallback"
   rm -rf "$stage"
   local url="https://huggingface.co/${repo}/resolve/main/${remote}"
+  local part="${target}.part"
   local aria=(aria2c -c -x 16 -s 16 -k 4M --file-allocation=none --max-tries=12 --retry-wait=3 --timeout=90 --connect-timeout=20 --allow-overwrite=true --auto-file-renaming=false)
   [[ -n "${HF_TOKEN:-}" ]] && aria+=(--header="Authorization: Bearer ${HF_TOKEN}")
-  "${aria[@]}" "$url" -d "$(dirname "$target")" -o "$(basename "$target")"
-  [[ -s "$target" ]] || die "$desc download failed"
+  "${aria[@]}" "$url" -d "$(dirname "$part")" -o "$(basename "$part")"
+  [[ -s "$part" ]] || die "$desc download failed"
+  mv "$part" "$target"
+  rm -f "${part}.aria2" 2>/dev/null || true
   ok "$desc"
 }
 
@@ -196,9 +267,16 @@ url_file() {
   mkdir -p "$(dirname "$target")"
   [[ -s "$target" ]] && { ok "$desc already present"; return 0; }
   log "$desc"
+  local part="${target}.part"
   aria2c -c -x 16 -s 16 -k 4M --file-allocation=none --max-tries=12 --retry-wait=3 \
     --timeout=90 --connect-timeout=20 --allow-overwrite=true --auto-file-renaming=false \
-    "$url" -d "$(dirname "$target")" -o "$(basename "$target")"
+    "$url" -d "$(dirname "$part")" -o "$(basename "$part")"
+  if [[ ! -s "$part" ]]; then
+    warn "$desc download failed"
+    return 1
+  fi
+  mv "$part" "$target"
+  rm -f "${part}.aria2" 2>/dev/null || true
 }
 
 install_core_models() {
@@ -329,15 +407,55 @@ start_comfy() {
   ok "ComfyUI started | tmux attach -t comfyui | log /workspace/comfyui.log"
 }
 
+preload_profile() {
+  local profile="$1"
+  comfy_base_ready || die "Base snapshot/install missing at $COMFY_DIR. Restore or run setup_full.sh first."
+  prepare_transfer_tools
+  ensure_model_dirs
+
+  echo
+  echo "PRELOAD MODE: model files only."
+  echo "- ComfyUI stays running."
+  echo "- No custom nodes are cloned."
+  echo "- No packages are installed into ComfyUI venv."
+  echo "- Partial downloads use .part files; only completed files become visible."
+  echo
+
+  case "$profile" in
+    weekend)
+      install_rich_models
+      install_editing_models
+      ;;
+    extras)
+      # From FULL, this downloads both the Weekend delta and Extras-only heavy models.
+      install_rich_models
+      install_editing_models
+      install_optional_extra_models
+      ;;
+    *) die "Unknown preload profile: $profile" ;;
+  esac
+
+  echo
+  echo "============================================================"
+  echo " PRELOAD FINISHED: $profile"
+  echo "============================================================"
+  echo "You can keep using ComfyUI. Activate later with:"
+  if [[ "$profile" == "weekend" ]]; then
+    echo "  bash setup_weekend.sh"
+  else
+    echo "  bash setup_fluxDev1Extras.sh"
+  fi
+}
+
 run_profile() {
   local profile="$1"
   prepare_system
+
   if [[ "$profile" == "extras" ]]; then
-    [[ -x "$COMFY_DIR/venv/bin/python" ]] || die "Base ComfyUI missing. Run setup_full.sh or setup_weekend.sh first."
-    source "$COMFY_DIR/venv/bin/activate"
-    python -m pip install -U "huggingface_hub[hf_xet]>=1,<2" >/dev/null
+    comfy_base_ready || die "Base ComfyUI missing. Restore FULL snapshot or run setup_full.sh first."
+    ensure_model_dirs
   else
-    install_comfyui
+    ensure_comfy_base
   fi
 
   case "$profile" in
@@ -361,6 +479,7 @@ run_profile() {
       install_editing_models
       ;;
     extras)
+      # FULL -> advanced + optional extras in one activation pass.
       install_advanced_nodes
       install_optional_extra_nodes
       install_node_requirements
@@ -384,7 +503,9 @@ run_profile() {
   esac
 
   validate_minimal
-  start_comfy
+  if [[ "${NO_START:-0}" != "1" ]]; then
+    start_comfy
+  fi
 
   echo
   echo "============================================================"
@@ -393,6 +514,8 @@ run_profile() {
   if [[ -s "$SETUP_WARNINGS" ]]; then
     echo "Warnings were recorded in: $SETUP_WARNINGS"
   fi
-  echo "ComfyUI is already running. You do NOT need to type the tmux start commands manually."
-  echo "To view it: tmux attach -t comfyui"
+  if [[ "${NO_START:-0}" != "1" ]]; then
+    echo "ComfyUI is already running. You do NOT need to type the tmux start commands manually."
+    echo "To view it: tmux attach -t comfyui"
+  fi
 }
