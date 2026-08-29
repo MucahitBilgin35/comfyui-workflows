@@ -69,7 +69,7 @@ install_comfyui() {
   # Current ComfyUI NVIDIA guidance uses stable PyTorch with CUDA 13.0.
   python -m pip install torch torchvision torchaudio --extra-index-url "$TORCH_INDEX"
   python -m pip install -r requirements.txt
-  python -m pip install -U "huggingface_hub>=0.32"
+  python -m pip install -U "huggingface_hub[hf_xet]>=1,<2"
   mkdir -p models/{diffusion_models,unet,text_encoders,clip,vae,loras,controlnet,upscale_models,clip_vision,ipadapter,pulid,insightface/models/antelopev2,style_models,ultralytics/bbox,ultralytics/segm,sam2,SEEDVR2,facerestore_models,checkpoints,xlabs/ipadapters,xlabs/loras,xlabs/controlnets}
   ok "ComfyUI ready @ $(git -C "$COMFY_DIR" rev-parse --short HEAD)"
 }
@@ -92,8 +92,14 @@ install_base_nodes() {
   clone_node "ComfyUI-Custom-Scripts" "https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git"
   clone_node "comfyui_controlnet_aux" "https://github.com/Fannovel16/comfyui_controlnet_aux.git"
   clone_node "ComfyUI-Impact-Pack" "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+  # Impact Pack no longer carries UltralyticsDetectorProvider itself.
+  clone_node "ComfyUI-Impact-Subpack" "https://github.com/comfyorg/comfyui-impact-subpack.git"
   clone_node "ComfyUI_essentials" "https://github.com/cubiq/ComfyUI_essentials.git"
   clone_node "x-flux-comfyui" "https://github.com/XLabs-AI/x-flux-comfyui.git"
+
+  # Learning / diagnostics helpers. These do not replace native nodes.
+  clone_node "ComfyUI-Lora-Manager" "https://github.com/willmiao/ComfyUI-Lora-Manager.git"
+  clone_node "ComfyUI-Crystools" "https://github.com/crystian/ComfyUI-Crystools.git"
 }
 
 install_advanced_nodes() {
@@ -115,9 +121,23 @@ install_advanced_nodes() {
   fi
 }
 
+install_optional_extra_nodes() {
+  # These are useful, but deliberately kept out of the stable one-click profile
+  # because they expand the dependency surface. Run setup_fluxDev1Extras.sh when wanted.
+  clone_node "ComfyUI-Florence2" "https://github.com/kijai/ComfyUI-Florence2.git"
+  clone_node "ComfyUI-RMBG" "https://github.com/1038lab/ComfyUI-RMBG.git"
+}
+
 install_node_requirements() {
   log "Custom-node dependencies"
   source "$COMFY_DIR/venv/bin/activate"
+
+  # Florence2 currently has open compatibility issues with Transformers 5.x.
+  # Keep this optional extras stack on a tested 4.x range instead of blindly upgrading.
+  if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI-Florence2" || -d "$COMFY_DIR/custom_nodes/ComfyUI-RMBG" ]]; then
+    python -m pip install --prefer-binary "transformers>=4.50.3,<5" || warn "Transformers compatibility pin failed"
+  fi
+
   local req
   for req in "$COMFY_DIR"/custom_nodes/*/requirements.txt; do
     [[ -f "$req" ]] || continue
@@ -134,6 +154,11 @@ install_node_requirements() {
   if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI_PuLID_Flux_ll" ]]; then
     python -m pip install --prefer-binary --no-deps facenet-pytorch || warn "facenet-pytorch helper failed"
   fi
+
+  if [[ -d "$COMFY_DIR/custom_nodes/ComfyUI-Florence2" || -d "$COMFY_DIR/custom_nodes/ComfyUI-RMBG" ]]; then
+    python -m pip install --prefer-binary "transformers>=4.50.3,<5" || warn "Final Transformers compatibility pin failed"
+  fi
+  python -m pip check || warn "pip check found dependency conflicts; inspect before making a Golden snapshot"
 }
 
 hf_file() {
@@ -252,6 +277,30 @@ install_editing_models() {
   fi
 }
 
+install_optional_extra_models() {
+  # Quality comparison option for the upscale phase. 7B is much larger than the 3B model,
+  # so it lives only in setup_fluxDev1Extras.sh.
+  hf_file "numz/SeedVR2_comfyUI" "seedvr2_ema_7b_fp8_e4m3fn.safetensors" \
+    "$COMFY_DIR/models/SEEDVR2/seedvr2_ema_7b_fp8_e4m3fn.safetensors" "SeedVR2 7B FP8 (extra quality option)"
+
+  # Official BFL Canny/Depth LoRAs are gated under the FLUX Dev license.
+  # Keep them available in this script, but never download them silently.
+  if [[ "${INSTALL_BFL_CONTROL_LORAS:-0}" == "1" ]]; then
+    [[ -n "${HF_TOKEN:-}" ]] || warn "INSTALL_BFL_CONTROL_LORAS=1 but HF_TOKEN is not set"
+    hf_file "black-forest-labs/FLUX.1-Canny-dev-lora" "flux1-canny-dev-lora.safetensors" \
+      "$COMFY_DIR/models/loras/flux1-canny-dev-lora.safetensors" "BFL FLUX.1 Canny Dev LoRA" || \
+      warn "BFL Canny LoRA skipped/failed (accept the model license on Hugging Face first)"
+    hf_file "black-forest-labs/FLUX.1-Depth-dev-lora" "flux1-depth-dev-lora.safetensors" \
+      "$COMFY_DIR/models/loras/flux1-depth-dev-lora.safetensors" "BFL FLUX.1 Depth Dev LoRA" || \
+      warn "BFL Depth LoRA skipped/failed (accept the model license on Hugging Face first)"
+  else
+    warn "BFL Canny/Depth LoRAs are available but skipped by default (gated license; set INSTALL_BFL_CONTROL_LORAS=1 after accepting access)."
+  fi
+
+  # Florence2 and RMBG models are intentionally not pre-downloaded here. Their nodes can
+  # fetch the specific model you choose on first use, avoiding many unused gigabytes.
+}
+
 validate_minimal() {
   log "Validation"
   local missing=0
@@ -286,7 +335,7 @@ run_profile() {
   if [[ "$profile" == "extras" ]]; then
     [[ -x "$COMFY_DIR/venv/bin/python" ]] || die "Base ComfyUI missing. Run setup_full.sh or setup_weekend.sh first."
     source "$COMFY_DIR/venv/bin/activate"
-    python -m pip install -U "huggingface_hub>=0.32" >/dev/null
+    python -m pip install -U "huggingface_hub[hf_xet]>=1,<2" >/dev/null
   else
     install_comfyui
   fi
@@ -313,10 +362,12 @@ run_profile() {
       ;;
     extras)
       install_advanced_nodes
+      install_optional_extra_nodes
       install_node_requirements
       install_identity_models
       install_rich_models
       install_editing_models
+      install_optional_extra_models
       ;;
     everything)
       install_base_nodes

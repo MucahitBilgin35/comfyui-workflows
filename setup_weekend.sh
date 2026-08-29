@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Rich stable learning setup: base + editing/upscale/advanced roadmap tools.
 set -Eeuo pipefail
 RAW_BASE="https://raw.githubusercontent.com/MucahitBilgin35/comfyui-workflows/main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

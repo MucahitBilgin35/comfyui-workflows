@@ -1,37 +1,33 @@
-GITHUB UPDATE - 2026-08-29
+COMFYUI / CLORE — FINAL STABLE SCRIPT SET
 
-Upload these files to the repository root:
-  _comfy_common.sh
-  setup_full.sh
-  setup_weekend.sh
-  setup_fluxDev1Extras.sh
-  setup_everything.sh   (new, recommended one-click option)
+NORMAL GOLDEN BUILD
+1) Run setup_everything.sh once on a clean Clore machine.
+2) Test ComfyUI and your core workflows.
+3) If you want the optional toolbox too, run setup_fluxDev1Extras.sh once.
+4) Test again. If stable, make your Hugging Face Golden Snapshot.
 
-Recommended new-machine command:
+WHAT WAS ADDED TO THE STABLE TOOLBOX
+- ComfyUI-Impact-Subpack: UltralyticsDetectorProvider / FaceDetailer support.
+- ComfyUI-Lora-Manager: previews, trigger words, notes and recipes.
+- ComfyUI-Crystools: VRAM/RAM/time monitoring and image/JSON comparison.
 
-  apt-get update -qq && apt-get install -y -qq curl ca-certificates
-  curl -fL --retry 5 https://raw.githubusercontent.com/MucahitBilgin35/comfyui-workflows/main/setup_everything.sh -o setup_everything.sh
-  chmod +x setup_everything.sh
-  bash setup_everything.sh
+WHAT LIVES ONLY IN setup_fluxDev1Extras.sh
+- ComfyUI-Florence2 (useful phrase grounding / region selection; kept out of stable base because of current Transformers compatibility churn).
+- ComfyUI-RMBG (advanced background removal / segmentation).
+- SeedVR2 7B FP8 (large quality comparison option).
+- Official BFL Canny/Depth LoRAs are wired in but DISABLED by default because they are gated/licensed. Set INSTALL_BFL_CONTROL_LORAS=1 only after accepting access on Hugging Face and supplying HF_TOKEN.
 
-The wrapper automatically fetches _comfy_common.sh.
+NOT INCLUDED ON PURPOSE
+- FLUX Kontext / Qwen Edit / FLUX Klein / Krea as default downloads: large alternative model families, better added when their learning phase starts.
+- TeaCache / WaveSpeed in the stable learning environment: speed optimizers can change behavior and currently have compatibility churn.
+- WAS Node Suite: archived.
+- IPAdapter Plus as the primary FLUX path: maintenance-only; this stack uses x-flux for FLUX IP-Adapter.
 
-Profiles:
-  setup_full.sh            = core + LoRA + ControlNet + identity essentials
-  setup_weekend.sh         = full richer toolbox
-  setup_fluxDev1Extras.sh  = advanced extras for an existing base
-  setup_everything.sh      = recommended one-click complete learning toolbox
+SPEED
+- Hugging Face downloads use hf_xet High Performance automatically on ~64 GB+ RAM machines.
+- Xet adaptive concurrency is left enabled because Hugging Face recommends it for saturating most network paths.
+- aria2 (16 connections) is the fallback.
 
-Speed:
-  - Hugging Face Xet high-performance mode auto-enables on 60 GB+ RAM.
-  - HF download has aria2 16-connection fallback.
-  - Git clones are shallow/filtered.
-  - pip uses binary packages when possible.
-
-Removed from default install:
-  - WAS Node Suite (repository archived in 2025)
-  - ComfyUI_IPAdapter_plus (maintenance-only; FLUX stack uses x-flux)
-  - old ComfyUI-SUPIR wrapper (SUPIR is in ComfyUI core)
-
-FLUX.1 Fill Dev is gated/licensed and is skipped by default. After accepting its license,
-set ACCEPT_FLUX_DEV_LICENSE=1 and HF_TOKEN before running the rich/everything profile.
+COMFYUI START
+All setup profiles start ComfyUI automatically. You do NOT need to type the long tmux command afterward.
+To view logs: tmux attach -t comfyui

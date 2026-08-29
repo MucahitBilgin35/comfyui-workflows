@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Recommended one-click GitHub installer: full learning toolbox.
+# RECOMMENDED stable one-click setup for normal learning sessions.
+# Installs the useful stable toolbox, validates it, and starts ComfyUI.
+# Experimental/large extras stay in setup_fluxDev1Extras.sh.
 set -Eeuo pipefail
 RAW_BASE="https://raw.githubusercontent.com/MucahitBilgin35/comfyui-workflows/main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

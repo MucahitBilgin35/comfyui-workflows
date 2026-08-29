@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Stable base learning setup: ComfyUI + core FLUX + LoRA + ControlNet + identity stack.
 set -Eeuo pipefail
 RAW_BASE="https://raw.githubusercontent.com/MucahitBilgin35/comfyui-workflows/main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
